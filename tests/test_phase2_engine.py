@@ -16,21 +16,26 @@ def synthetic_screenshot() -> np.ndarray:
     image = np.full((1600, 800, 3), 210, dtype=np.uint8)
     image[90:1260] = (90, 110, 130)
 
-    # Top status/navigation bars with multiple high-contrast UI edges.
+    # Top status/navigation bars with dense high-contrast UI edges.
     cv2.rectangle(image, (0, 0), (799, 90), (245, 245, 245), -1)
     cv2.putText(image, '17:13', (25, 42), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (20, 20, 20), 2)
     cv2.putText(image, 'Facebook', (250, 62), cv2.FONT_HERSHEY_SIMPLEX, 1.15, (30, 30, 30), 3)
     for x in (610, 665, 720, 770):
         cv2.rectangle(image, (x, 18), (x + 24, 54), (35, 35, 35), 2)
+    for y in (8, 78):
+        cv2.line(image, (0, y), (799, y), (35, 35, 35), 2)
 
-    # Bottom social-media information/action area.
+    # Bottom social-media information/action area with multiple text and icon edges.
     cv2.rectangle(image, (0, 1260), (799, 1599), (250, 250, 250), -1)
     cv2.circle(image, (70, 1320), 35, (70, 70, 70), 3)
     cv2.putText(image, 'Courtney Anne', (120, 1328), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (40, 40, 40), 2)
     cv2.putText(image, '17 OCT 2012', (120, 1370), cv2.FONT_HERSHEY_SIMPLEX, 0.65, (55, 55, 55), 2)
     cv2.putText(image, 'with Tyler + 1 other', (35, 1450), cv2.FONT_HERSHEY_SIMPLEX, 0.75, (45, 45, 45), 2)
+    cv2.putText(image, 'Like   Comment   Share', (70, 1575), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (45, 45, 45), 2)
     for x in (100, 300, 500, 700):
-        cv2.circle(image, (x, 1530), 28, (60, 60, 60), 3)
+        cv2.circle(image, (x, 1515), 28, (60, 60, 60), 3)
+    for y in (1262, 1392, 1480, 1590):
+        cv2.line(image, (0, y), (799, y), (65, 65, 65), 2)
     return image
 
 
