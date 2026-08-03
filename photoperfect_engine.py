@@ -150,6 +150,7 @@ class PhotoPerfectEngine:
         contrast = float(gray.std())
         minimum = max(28, min(h, w) // 22)
         faces = self.face_detector.detectMultiScale(gray, 1.1, 5, minSize=(minimum, minimum))
+        face_count = len(faces)
         ratios = [(fw * fh) / float(h * w) for _, _, fw, fh in faces]
         smallest_face = min(ratios) if ratios else 0.0
 
@@ -170,7 +171,7 @@ class PhotoPerfectEngine:
             problems.append('clipped highlights')
         if contrast < 36:
             problems.append('low contrast')
-        if faces and smallest_face < 0.015:
+        if face_count > 0 and smallest_face < 0.015:
             problems.append('small face detail')
         if is_monochrome:
             problems.append('black and white / monochrome image')
@@ -179,7 +180,7 @@ class PhotoPerfectEngine:
             image_type = 'Screenshot Recovery'
         elif is_monochrome:
             image_type = 'Black & White Restore'
-        elif len(faces) > 0:
+        elif face_count > 0:
             image_type = 'Portrait / People'
         elif dark > 0.16:
             image_type = 'Low Light'
@@ -192,7 +193,7 @@ class PhotoPerfectEngine:
             is_screenshot=is_screenshot,
             is_monochrome=is_monochrome,
             is_low_resolution=is_low_resolution,
-            face_count=len(faces),
+            face_count=face_count,
             smallest_face_ratio=smallest_face,
             blur_score=blur,
             noise_score=noise,
