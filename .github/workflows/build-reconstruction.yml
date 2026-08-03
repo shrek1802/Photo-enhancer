@@ -1,0 +1,100 @@
+name: Build PhotoPerfect Reconstruction Studio
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'generative_reconstruction.py'
+      - 'reconstruction_window.py'
+      - 'photoperfect_intelligence.py'
+      - 'tests/test_phase5_reconstruction.py'
+      - '.github/workflows/build-reconstruction.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  test-and-build:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+
+      - name: Install dependencies
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Compile source
+        shell: pwsh
+        run: python -m compileall -q .
+
+      - name: Run Phase 5 reconstruction tests
+        shell: pwsh
+        run: pytest -q tests/test_phase5_reconstruction.py tests/test_phase4_intelligence.py
+
+      - name: Build Reconstruction Studio EXE
+        shell: pwsh
+        run: |
+          pyinstaller --noconfirm --clean --onefile --windowed `
+            --name "PhotoPerfect-Reconstruction-Studio" `
+            --collect-all cv2 `
+            --collect-all PySide6 `
+            --hidden-import generative_reconstruction `
+            --hidden-import photoperfect_intelligence `
+            reconstruction_window.py
+
+      - name: Package build
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path package | Out-Null
+          Copy-Item "dist/PhotoPerfect-Reconstruction-Studio.exe" "package/PhotoPerfect-Reconstruction-Studio.exe"
+          Set-Content -Path "package/README.txt" -Value @"
+          PhotoPerfect Generative Reconstruction Studio v5
+
+          This optional feature is for severely degraded photographs. It sends the selected image to the configured OpenAI image-editing service, requests multiple high-input-fidelity candidates, and keeps only a candidate that passes PhotoPerfect Phase 4 identity and structure validation.
+
+          An OpenAI API key, internet connection and available API credit are required. The key is used for the current session and is not written to disk by PhotoPerfect.
+
+          Generative reconstruction creates plausible missing detail. It is not a purely factual recovery of destroyed pixels.
+          "@
+          Compress-Archive -Path "package/*" -DestinationPath "PhotoPerfect-Reconstruction-Studio-Windows.zip" -Force
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: PhotoPerfect-Reconstruction-Studio-Windows
+          path: |
+            dist/PhotoPerfect-Reconstruction-Studio.exe
+            PhotoPerfect-Reconstruction-Studio-Windows.zip
+          if-no-files-found: error
+
+      - name: Publish Phase 5 release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: reconstruction-v5.0.${{ github.run_number }}
+          name: PhotoPerfect Generative Reconstruction v5.0.${{ github.run_number }}
+          body: |
+            Phase 5 introduces optional Generative Reconstruction for severely degraded photographs.
+
+            - high-input-fidelity image editing
+            - two to four candidate reconstructions
+            - Phase 4 identity and structure validation
+            - unsafe candidates are rejected
+            - API key is session-only and is not stored by PhotoPerfect
+            - normal PhotoPerfect restoration remains local and separate
+
+            This mode generates plausible missing detail and should not be described as exact factual recovery.
+          files: |
+            dist/PhotoPerfect-Reconstruction-Studio.exe
+            PhotoPerfect-Reconstruction-Studio-Windows.zip
+          prerelease: false
+          make_latest: true
