@@ -1,4 +1,4 @@
-name: Build Windows EXE
+name: Build Windows GPU EXEs
 
 on:
   workflow_dispatch:
@@ -13,6 +13,16 @@ permissions:
 jobs:
   build-windows:
     runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - edition: AMD-DirectML
+            runtime: onnxruntime-directml==1.20.1
+            exe_name: PhotoPerfect-Batch-AI-AMD-DirectML
+          - edition: NVIDIA-CUDA
+            runtime: onnxruntime-gpu==1.20.1
+            exe_name: PhotoPerfect-Batch-AI-NVIDIA-CUDA
 
     steps:
       - name: Checkout repository
@@ -29,45 +39,51 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
+          pip install "${{ matrix.runtime }}"
 
       - name: Build standalone EXE
         shell: pwsh
         run: |
           pyinstaller --noconfirm --clean --onefile --windowed `
-            --name "PhotoPerfect-Batch-AI" `
+            --name "${{ matrix.exe_name }}" `
             --collect-all cv2 `
             --collect-all PySide6 `
+            --collect-all onnxruntime `
             app.py
 
       - name: Package build
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path package | Out-Null
-          Copy-Item "dist/PhotoPerfect-Batch-AI.exe" "package/PhotoPerfect-Batch-AI.exe"
+          New-Item -ItemType Directory -Force -Path package/models | Out-Null
+          Copy-Item "dist/${{ matrix.exe_name }}.exe" "package/${{ matrix.exe_name }}.exe"
           Copy-Item README.md "package/README.txt"
-          Compress-Archive -Path "package/*" -DestinationPath "PhotoPerfect-Batch-AI-Windows.zip" -Force
+          Set-Content -Path "package/models/PUT_AI_MODEL_HERE.txt" -Value "Place super_resolution_x2.onnx in this folder to enable neural 2x upscaling. Without it the app uses its safe photographic fallback."
+          Compress-Archive -Path "package/*" -DestinationPath "${{ matrix.exe_name }}-Windows.zip" -Force
 
-      - name: Upload EXE artifact
+      - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: PhotoPerfect-Batch-AI-Windows
+          name: ${{ matrix.exe_name }}-Windows
           path: |
-            dist/PhotoPerfect-Batch-AI.exe
-            PhotoPerfect-Batch-AI-Windows.zip
+            dist/${{ matrix.exe_name }}.exe
+            ${{ matrix.exe_name }}-Windows.zip
           if-no-files-found: error
 
       - name: Publish build to GitHub Releases
         if: github.event_name != 'pull_request'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v0.1.${{ github.run_number }}
-          name: PhotoPerfect Batch AI v0.1.${{ github.run_number }}
+          tag_name: v0.4.${{ github.run_number }}
+          name: PhotoPerfect Batch AI v0.4.${{ github.run_number }}
           body: |
-            Automatic Windows 11 build of PhotoPerfect Batch AI.
+            Automatic Windows 11 GPU build.
 
-            Download either the standalone EXE or the ZIP package below.
+            Choose AMD DirectML for Radeon cards including RX 6900 XT.
+            Choose NVIDIA CUDA for GeForce cards including RTX 2060.
+            Both editions retain CPU fallback processing.
           files: |
-            dist/PhotoPerfect-Batch-AI.exe
-            PhotoPerfect-Batch-AI-Windows.zip
+            dist/${{ matrix.exe_name }}.exe
+            ${{ matrix.exe_name }}-Windows.zip
           prerelease: false
           make_latest: true
