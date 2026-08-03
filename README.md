@@ -28,23 +28,35 @@ Original photographs are never overwritten. Finished copies are saved inside a `
 
 ## PhotoPerfect Engine Phase 2
 
-Auto Detect now performs a proper inspection before processing. It measures screenshot and social-media UI likelihood, monochrome content, resolution, face size, JPEG blocking, blur, noise, exposure, highlights and contrast.
+Auto Detect performs a proper inspection before processing. It measures screenshot and social-media UI likelihood, monochrome content, resolution, face size, JPEG blocking, blur, noise, exposure, highlights and contrast.
 
-For each image it builds a dynamic repair plan, then tries multiple safe strategies:
+For each image it builds a dynamic repair plan, tries Gentle, Balanced and Strong safe strategies, then keeps the highest-scoring accepted result. If every candidate scores worse, the original is retained.
 
-- Gentle
-- Balanced
-- Strong
+## PhotoPerfect Engine Phase 3
 
-The engine scores every candidate and keeps the best accepted result. If every candidate scores worse, it keeps the original rather than silently saving a degraded image.
+Phase 3 adds a real neural capability layer between the repair planner and the model packs.
 
-Dedicated processing is included for:
+The engine can now request these capabilities automatically:
 
-- Screenshot and social-media recovery
-- Black-and-white tonal restoration
-- Identity-safe portraits
-- Low-light photographs
-- Professional light polish for already-good images
+- `jpeg_repair`
+- `denoise`
+- `deblur`
+- `colour`
+- `super_resolution`
+
+Each capability is resolved through the installed model-pack manifests. The runtime:
+
+- Selects CUDA, DirectML or CPU automatically
+- Uses tiled ONNX inference for large photographs
+- Supports common NCHW and NHWC image-model layouts
+- Keeps model files outside the EXE so they can update independently
+- Skips missing or incompatible models safely
+- Falls back to the built-in Phase 2 photographic engine if inference fails
+- Reports which capabilities were requested, applied or missing
+
+Super-resolution remains connected to the output-size controls so an installed model cannot unexpectedly change image dimensions.
+
+`face_protect` and `inpaint` remain reserved specialist capabilities. They are not run over whole photographs until a safe region-based implementation and suitable validated models are available.
 
 ## Face Identity Lock
 
@@ -52,35 +64,15 @@ Face Identity Lock is enabled by default. It preserves real facial features and 
 
 ## Versioned model packs
 
-Phase 2 adds a real model-pack system. Packs are separate from app releases and can be updated independently.
+Packs are separate from app releases and can be updated independently. A manifest records the pack version, minimum app version, capabilities, provider support, file sizes, SHA-256 checksums and archive details.
 
-A pack manifest records:
-
-- Pack ID and version
-- Minimum app version
-- Model capability names
-- File names and sizes
-- Supported execution providers
-- SHA-256 checksums
-- Archive download URL and checksum
-
-Installations are staged in a temporary folder, checksum verified and validated before replacing the current pack. A failed installation automatically retains or restores the previous working pack.
+Installations are staged, checksum verified and validated before replacing the current pack. A failed installation retains or restores the previous working pack.
 
 The first pack template is:
 
 `model_packs/essentials-manifest.template.json`
 
-Supported capability names currently include:
-
-- `jpeg_repair`
-- `deblur`
-- `denoise`
-- `super_resolution`
-- `face_protect`
-- `colour`
-- `inpaint`
-
-No unlicensed or fake neural weights are bundled. The built-in photographic engine remains usable when no optional model pack is installed.
+No unlicensed, fake or empty neural weights are bundled. Genuine PhotoPerfect model packs will be released separately after model compatibility, output quality and licensing have been verified.
 
 ## GPU editions
 
@@ -93,7 +85,7 @@ Both editions retain CPU fallback processing.
 
 ## Quality gates
 
-GitHub Actions now runs source compilation and Phase 2 regression tests before either Windows executable is built. Tests cover screenshot routing, monochrome restoration, candidate pipeline retries and model-pack checksum validation.
+GitHub Actions runs source compilation plus Phase 2 and Phase 3 regression tests before either Windows executable is built. Tests cover screenshot routing, monochrome restoration, candidate retries, model-pack checksum validation, capability planning and safe missing-model fallback.
 
 ## Download
 
