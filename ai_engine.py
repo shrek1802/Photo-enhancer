@@ -8,6 +8,8 @@ from pathlib import Path
 import cv2
 import numpy as np
 
+from model_manager import PhotoPerfectModelManager
+
 
 @dataclass(frozen=True)
 class EngineStatus:
@@ -25,14 +27,7 @@ def app_directory() -> Path:
 
 
 class NeuralEngine:
-    """Optional ONNX restoration engine supporting CUDA, DirectML and CPU.
-
-    Models are kept outside the EXE so releases stay manageable. Place a compatible
-    NCHW RGB super-resolution ONNX model at models/super_resolution_x2.onnx.
-    The engine uses tiled inference to avoid exhausting GPU memory on large photos.
-    """
-
-    MODEL_NAME = 'super_resolution_x2.onnx'
+    """Optional ONNX super-resolution engine with model-pack discovery."""
 
     def __init__(self, enabled: bool = True, tile_size: int = 256):
         self.enabled = enabled
@@ -41,13 +36,18 @@ class NeuralEngine:
         self.input_name = ''
         self.output_name = ''
         self.scale = 2
+        self.manager = PhotoPerfectModelManager(self.models_root)
         self.status = self._initialise()
 
     @property
-    def model_path(self) -> Path:
+    def models_root(self) -> Path:
         configured = os.environ.get('PHOTOPERFECT_MODEL_DIR')
-        root = Path(configured) if configured else app_directory() / 'models'
-        return root / self.MODEL_NAME
+        return Path(configured) if configured else app_directory() / 'models'
+
+    @property
+    def model_path(self) -> Path:
+        managed = self.manager.capability_path('super_resolution')
+        return managed if managed else self.models_root / 'super_resolution_x2.onnx'
 
     def _initialise(self) -> EngineStatus:
         if not self.enabled:
@@ -72,25 +72,40 @@ class NeuralEngine:
 
         provider, display = chosen
         if not self.model_path.exists():
-            return EngineStatus(True, provider, display, False,
-                                f'{display} detected. Add {self.MODEL_NAME} to the models folder to enable neural upscaling.')
+            capabilities = ', '.join(sorted(self.manager.installed_capabilities())) or 'none'
+            return EngineStatus(
+                True, provider, display, False,
+                f'{display} detected. Installed model capabilities: {capabilities}. '
+                'Install PhotoPerfect Essentials to enable neural super-resolution.'
+            )
         try:
             options = ort.SessionOptions()
             options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
-            self.session = ort.InferenceSession(str(self.model_path), sess_options=options,
-                                                providers=[provider, 'CPUExecutionProvider'])
+            providers = [provider]
+            if provider != 'CPUExecutionProvider' and 'CPUExecutionProvider' in available:
+                providers.append('CPUExecutionProvider')
+            self.session = ort.InferenceSession(
+                str(self.model_path), sess_options=options, providers=providers
+            )
             self.input_name = self.session.get_inputs()[0].name
             self.output_name = self.session.get_outputs()[0].name
             shape_in = self.session.get_inputs()[0].shape
             shape_out = self.session.get_outputs()[0].shape
-            if len(shape_in) == 4 and len(shape_out) == 4 and isinstance(shape_in[-1], int) and isinstance(shape_out[-1], int):
+            if (
+                len(shape_in) == 4 and len(shape_out) == 4
+                and isinstance(shape_in[-1], int) and isinstance(shape_out[-1], int)
+            ):
                 self.scale = max(1, int(round(shape_out[-1] / max(shape_in[-1], 1))))
-            return EngineStatus(True, provider, display, True,
-                                f'{display} active with {self.MODEL_NAME}.')
+            return EngineStatus(
+                True, provider, display, True,
+                f'{display} active with {self.model_path.name} from the model-pack system.'
+            )
         except Exception as exc:
             self.session = None
-            return EngineStatus(True, provider, display, False,
-                                f'{display} detected, but the neural model could not load: {exc}')
+            return EngineStatus(
+                True, provider, display, False,
+                f'{display} detected, but the neural model could not load: {exc}'
+            )
 
     def upscale(self, image_bgr: np.ndarray) -> np.ndarray:
         if self.session is None:
@@ -115,7 +130,9 @@ class NeuralEngine:
                 prediction = np.squeeze(prediction, axis=0)
                 prediction = np.transpose(prediction, (1, 2, 0))
                 prediction = np.clip(prediction, 0.0, 1.0)
-                prediction = cv2.cvtColor((prediction * 255.0).astype(np.uint8), cv2.COLOR_RGB2BGR).astype(np.float32)
+                prediction = cv2.cvtColor(
+                    (prediction * 255.0).astype(np.uint8), cv2.COLOR_RGB2BGR
+                ).astype(np.float32)
 
                 oy, ox = y * scale, x * scale
                 ph, pw = prediction.shape[:2]
