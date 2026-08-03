@@ -36,7 +36,7 @@ For each image it builds a dynamic repair plan, tries Gentle, Balanced and Stron
 
 Phase 3 adds a real neural capability layer between the repair planner and the model packs.
 
-The engine can now request these capabilities automatically:
+The engine can request these capabilities automatically:
 
 - `jpeg_repair`
 - `denoise`
@@ -44,19 +44,50 @@ The engine can now request these capabilities automatically:
 - `colour`
 - `super_resolution`
 
-Each capability is resolved through the installed model-pack manifests. The runtime:
+Each capability is resolved through the installed model-pack manifests. The runtime selects CUDA, DirectML or CPU automatically, uses tiled ONNX inference, skips missing models safely and falls back to the built-in engine if inference fails.
 
-- Selects CUDA, DirectML or CPU automatically
-- Uses tiled ONNX inference for large photographs
-- Supports common NCHW and NHWC image-model layouts
-- Keeps model files outside the EXE so they can update independently
-- Skips missing or incompatible models safely
-- Falls back to the built-in Phase 2 photographic engine if inference fails
-- Reports which capabilities were requested, applied or missing
+## PhotoPerfect Engine Phase 4
 
-Super-resolution remains connected to the output-size controls so an installed model cannot unexpectedly change image dimensions.
+Phase 4 adds the intelligence and safety layer needed before generative reconstruction is introduced.
 
-`face_protect` and `inpaint` remain reserved specialist capabilities. They are not run over whole photographs until a safe region-based implementation and suitable validated models are available.
+It now measures:
+
+- Blur and local sharpness
+- Noise and JPEG compression
+- Dynamic range
+- Deep shadows and clipped highlights
+- Colour cast
+- Whole-image structural similarity
+- Per-face size, brightness, contrast and sharpness
+
+Every detected face receives a protection level:
+
+- Normal
+- High
+- Maximum
+
+Tiny or heavily blurred faces automatically receive stronger protection and a lower permitted change amount.
+
+After processing, the candidate is checked for:
+
+- Face-region similarity
+- Whole-image structural similarity
+- New shadow or highlight clipping
+- Excessive sharpening
+
+Unsafe same-geometry results are rejected and the original is retained.
+
+The engine API supports five quality targets:
+
+- Standard
+- Professional — current default
+- Studio
+- Archive
+- Museum
+
+Higher targets use progressively stricter identity, structure, clipping and sharpening limits. The selectable interface for these targets will be exposed alongside the future reconstruction controls; current automatic processing uses Professional.
+
+Phase 4 face analysis protects appearance. It does not identify people and does not infer age, ethnicity, gender or other demographic attributes.
 
 ## Face Identity Lock
 
@@ -85,7 +116,7 @@ Both editions retain CPU fallback processing.
 
 ## Quality gates
 
-GitHub Actions runs source compilation plus Phase 2 and Phase 3 regression tests before either Windows executable is built. Tests cover screenshot routing, monochrome restoration, candidate retries, model-pack checksum validation, capability planning and safe missing-model fallback.
+GitHub Actions runs source compilation plus Phase 2, Phase 3 and Phase 4 regression tests before either Windows executable is built. Tests cover screenshot routing, monochrome restoration, model-pack validation, capability fallback, quality inspection and rejection of structurally unsafe results.
 
 ## Download
 
