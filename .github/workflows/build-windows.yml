@@ -29,7 +29,7 @@ jobs:
       - name: Compile source
         shell: pwsh
         run: python -m compileall -q .
-      - name: Run Phase 2 regression tests
+      - name: Run engine and capability regression tests
         shell: pwsh
         run: pytest -q
 
@@ -73,6 +73,7 @@ jobs:
             --collect-all PySide6 `
             --collect-all onnxruntime `
             --hidden-import model_manager `
+            --hidden-import capability_runtime `
             app.py
 
       - name: Package build
@@ -84,7 +85,7 @@ jobs:
           Copy-Item "dist/${{ matrix.exe_name }}.exe" "package/${{ matrix.exe_name }}.exe"
           Copy-Item README.md "package/README.txt"
           Copy-Item "model_packs/essentials-manifest.template.json" "package/model_packs/essentials-manifest.template.json"
-          Set-Content -Path "package/models/MODEL_PACK_INFO.txt" -Value "PhotoPerfect Studio v2 uses versioned model packs. Packs are SHA-256 verified and installed atomically. The app remains usable with built-in recovery when no pack is installed."
+          Set-Content -Path "package/models/MODEL_PACK_INFO.txt" -Value "PhotoPerfect Studio v3 loads specialist ONNX capabilities from independently versioned model packs. Missing models fall back safely to the built-in Phase 2 engine."
           Compress-Archive -Path "package/*" -DestinationPath "${{ matrix.exe_name }}-Windows.zip" -Force
 
       - name: Upload build artifact
@@ -100,19 +101,24 @@ jobs:
         if: github.event_name != 'pull_request'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: studio-v2.1.${{ github.run_number }}
-          name: PhotoPerfect Studio v2.1.${{ github.run_number }}
+          tag_name: studio-v3.0.${{ github.run_number }}
+          name: PhotoPerfect Studio v3.0.${{ github.run_number }}
           body: |
-            PhotoPerfect Studio Phase 2 for Windows 11.
+            PhotoPerfect Studio Phase 3 for Windows 11.
 
-            Phase 2 improvements:
-            - stronger screenshot and social-media interface detection
-            - dedicated black-and-white restoration
-            - dynamic repair plans
-            - gentle, balanced and strong candidate pipelines
-            - automatic quality scoring and best-candidate selection
-            - versioned model-pack manager with SHA-256 verification and rollback
-            - regression tests must pass before Windows builds
+            Phase 3 foundation:
+            - specialist model capabilities selected from each repair plan
+            - JPEG repair, denoise, deblur, colour and super-resolution capability routing
+            - tiled ONNX inference for large photographs
+            - CUDA, DirectML and CPU provider selection
+            - safe fallback when a model is missing, incompatible or fails inference
+            - independent model-pack updates remain SHA-256 verified
+            - Face Identity Lock remains enabled by default
+            - Phase 2 and Phase 3 regression tests must pass before Windows builds
+
+            This release contains the model runtime and pack system, but does not
+            falsely bundle unlicensed or placeholder AI weights. Genuine model packs
+            will be released separately once validated.
 
             Choose AMD DirectML for Radeon cards including RX 6900 XT.
             Choose NVIDIA CUDA for GeForce cards including RTX 2060.
