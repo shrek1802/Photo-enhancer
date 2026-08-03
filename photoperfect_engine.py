@@ -99,15 +99,33 @@ class PhotoPerfectEngine:
         h, w = image.shape[:2]
         gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
         edges = cv2.Canny(gray, 70, 150)
-        top = edges[: max(30, int(h * 0.12))]
-        bottom_gray = gray[int(h * 0.80):]
-        bottom_edges = edges[int(h * 0.80):]
+        top_h = max(30, int(h * 0.12))
+        bottom_y = int(h * 0.80)
+        top_gray = gray[:top_h]
+        bottom_gray = gray[bottom_y:]
+        middle_gray = gray[top_h:bottom_y]
+        top_edges = edges[:top_h]
+        bottom_edges = edges[bottom_y:]
+
         text_edge = float(np.mean(edges > 0) * 100.0)
-        top_density = float(np.mean(top > 0) * 100.0)
+        top_density = float(np.mean(top_edges > 0) * 100.0)
         bottom_density = float(np.mean(bottom_edges > 0) * 100.0)
-        flat_bar = max(0.0, 18.0 - float(bottom_gray.std()))
-        portrait_bonus = 18.0 if h / max(w, 1) > 1.5 else 0.0
-        social = np.clip(top_density * 1.6 + bottom_density * 1.2 + flat_bar + portrait_bonus, 0, 100)
+        flat_top = max(0.0, 20.0 - float(top_gray.std()))
+        flat_bottom = max(0.0, 20.0 - float(bottom_gray.std()))
+        middle_mean = float(middle_gray.mean()) if middle_gray.size else float(gray.mean())
+        band_contrast = min(
+            abs(float(top_gray.mean()) - middle_mean) +
+            abs(float(bottom_gray.mean()) - middle_mean),
+            80.0,
+        ) / 4.0
+        portrait_bonus = 16.0 if h / max(w, 1) > 1.5 else 0.0
+        social = np.clip(
+            top_density * 1.8 + bottom_density * 1.5 +
+            flat_top * 0.35 + flat_bottom * 0.55 +
+            band_contrast + portrait_bonus,
+            0,
+            100,
+        )
         return text_edge, float(social)
 
     def inspect(self, image: np.ndarray) -> Inspection:
@@ -116,8 +134,11 @@ class PhotoPerfectEngine:
         hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
         is_monochrome = float(np.percentile(hsv[:, :, 1], 90)) < 18
         text_edge, social_ui = self._ui_scores(image)
-        is_screenshot = social_ui >= 38 or (
-            h / max(w, 1) > 1.6 and text_edge > 8.0 and not bool(self._read_exif_hint(image))
+        aspect = h / max(w, 1)
+        is_screenshot = (
+            social_ui >= 34
+            or (aspect > 1.5 and social_ui >= 26)
+            or (aspect > 1.75 and social_ui >= 22 and text_edge >= 1.0)
         )
         is_low_resolution = min(h, w) < 1000 or h * w < 1_500_000
         blur = float(cv2.Laplacian(gray, cv2.CV_64F).var())
@@ -186,7 +207,6 @@ class PhotoPerfectEngine:
 
     @staticmethod
     def _read_exif_hint(_image: np.ndarray) -> bool:
-        # Pixel-only engine has no EXIF object. Kept as an explicit extension point.
         return False
 
     def plan(self, inspection: Inspection, requested_mode: str) -> RepairPlan:
@@ -326,9 +346,7 @@ class PhotoPerfectEngine:
         after, selected, result = max(candidates, key=lambda item: item[0])
         tolerance = 4.0 if plan.inspection.is_screenshot else 1.5
         accepted = after + tolerance >= before
-        reasons = [
-            f'{strategy}: {score:.1f}' for score, strategy, _ in candidates
-        ]
+        reasons = [f'{strategy}: {score:.1f}' for score, strategy, _ in candidates]
         if not accepted:
             result = image.copy()
             after = before
