@@ -29,7 +29,7 @@ jobs:
       - name: Compile source
         shell: pwsh
         run: python -m compileall -q .
-      - name: Run engine and capability regression tests
+      - name: Run Phase 2 to Phase 4 regression tests
         shell: pwsh
         run: pytest -q
 
@@ -74,6 +74,7 @@ jobs:
             --collect-all onnxruntime `
             --hidden-import model_manager `
             --hidden-import capability_runtime `
+            --hidden-import photoperfect_intelligence `
             app.py
 
       - name: Package build
@@ -85,7 +86,7 @@ jobs:
           Copy-Item "dist/${{ matrix.exe_name }}.exe" "package/${{ matrix.exe_name }}.exe"
           Copy-Item README.md "package/README.txt"
           Copy-Item "model_packs/essentials-manifest.template.json" "package/model_packs/essentials-manifest.template.json"
-          Set-Content -Path "package/models/MODEL_PACK_INFO.txt" -Value "PhotoPerfect Studio v3 loads specialist ONNX capabilities from independently versioned model packs. Missing models fall back safely to the built-in Phase 2 engine."
+          Set-Content -Path "package/models/MODEL_PACK_INFO.txt" -Value "PhotoPerfect Studio v4 combines adaptive restoration, specialist ONNX capabilities, face protection and post-processing identity/quality validation."
           Compress-Archive -Path "package/*" -DestinationPath "${{ matrix.exe_name }}-Windows.zip" -Force
 
       - name: Upload build artifact
@@ -101,24 +102,22 @@ jobs:
         if: github.event_name != 'pull_request'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: studio-v3.0.${{ github.run_number }}
-          name: PhotoPerfect Studio v3.0.${{ github.run_number }}
+          tag_name: studio-v4.0.${{ github.run_number }}
+          name: PhotoPerfect Studio v4.0.${{ github.run_number }}
           body: |
-            PhotoPerfect Studio Phase 3 for Windows 11.
+            PhotoPerfect Studio Phase 4 for Windows 11.
 
-            Phase 3 foundation:
-            - specialist model capabilities selected from each repair plan
-            - JPEG repair, denoise, deblur, colour and super-resolution capability routing
-            - tiled ONNX inference for large photographs
-            - CUDA, DirectML and CPU provider selection
-            - safe fallback when a model is missing, incompatible or fails inference
-            - independent model-pack updates remain SHA-256 verified
-            - Face Identity Lock remains enabled by default
-            - Phase 2 and Phase 3 regression tests must pass before Windows builds
+            Phase 4 intelligence and safety:
+            - richer blur, noise, compression, dynamic-range, clipping and colour-cast inspection
+            - per-face size, sharpness, lighting and protection-level analysis
+            - Standard, Professional, Studio, Archive and Museum quality targets in the engine API
+            - post-processing identity and whole-image structure validation
+            - clipping and over-sharpening detection
+            - automatic rejection of unsafe same-geometry results
+            - detailed warnings for tiny faces, heavy compression, blur and exposure damage
+            - all Phase 2, Phase 3 and Phase 4 regression tests must pass before builds
 
-            This release contains the model runtime and pack system, but does not
-            falsely bundle unlicensed or placeholder AI weights. Genuine model packs
-            will be released separately once validated.
+            Face analysis protects appearance; it does not identify people or infer demographic attributes.
 
             Choose AMD DirectML for Radeon cards including RX 6900 XT.
             Choose NVIDIA CUDA for GeForce cards including RTX 2060.
