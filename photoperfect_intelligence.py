@@ -74,12 +74,28 @@ class PhotoPerfectIntelligence:
             return 1.0
         first = cv2.resize(first, (96, 96), interpolation=cv2.INTER_AREA).astype(np.float32)
         second = cv2.resize(second, (96, 96), interpolation=cv2.INTER_AREA).astype(np.float32)
-        first -= first.mean()
-        second -= second.mean()
-        denominator = float(np.linalg.norm(first) * np.linalg.norm(second))
-        if denominator < 1e-6:
-            return 1.0
-        return float(np.clip(np.sum(first * second) / denominator, -1.0, 1.0))
+
+        first_mean = float(first.mean())
+        second_mean = float(second.mean())
+        first_centered = first - first_mean
+        second_centered = second - second_mean
+        first_norm = float(np.linalg.norm(first_centered))
+        second_norm = float(np.linalg.norm(second_centered))
+
+        # A flat image has no structural information. Treat two genuinely similar
+        # flat regions as matching, but never allow a flat candidate to score as
+        # identical to a detailed reference image.
+        epsilon = 1e-6
+        if first_norm < epsilon and second_norm < epsilon:
+            return float(np.clip(1.0 - abs(first_mean - second_mean) / 255.0, 0.0, 1.0))
+        if first_norm < epsilon or second_norm < epsilon:
+            return 0.0
+
+        return float(np.clip(
+            np.sum(first_centered * second_centered) / (first_norm * second_norm),
+            -1.0,
+            1.0,
+        ))
 
     @staticmethod
     def _compression_score(gray: np.ndarray) -> float:
