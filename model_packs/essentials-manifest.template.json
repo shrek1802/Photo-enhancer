@@ -1,0 +1,59 @@
+{
+  "schema_version": 1,
+  "pack_id": "photoperfect-essentials",
+  "name": "PhotoPerfect Essentials",
+  "version": "0.1.0",
+  "minimum_app_version": "2.0.0",
+  "archive_url": "",
+  "archive_sha256": "",
+  "files": [
+    {
+      "capability": "jpeg_repair",
+      "filename": "jpeg_repair.onnx",
+      "sha256": "",
+      "size": 0,
+      "providers": ["CUDAExecutionProvider", "DmlExecutionProvider", "CPUExecutionProvider"],
+      "required": false
+    },
+    {
+      "capability": "deblur",
+      "filename": "deblur.onnx",
+      "sha256": "",
+      "size": 0,
+      "providers": ["CUDAExecutionProvider", "DmlExecutionProvider", "CPUExecutionProvider"],
+      "required": false
+    },
+    {
+      "capability": "denoise",
+      "filename": "denoise.onnx",
+      "sha256": "",
+      "size": 0,
+      "providers": ["CUDAExecutionProvider", "DmlExecutionProvider", "CPUExecutionProvider"],
+      "required": false
+    },
+    {
+      "capability": "super_resolution",
+      "filename": "super_resolution_x2.onnx",
+      "sha256": "",
+      "size": 0,
+      "providers": ["CUDAExecutionProvider", "DmlExecutionProvider", "CPUExecutionProvider"],
+      "required": false
+    },
+    {
+      "capability": "face_protect",
+      "filename": "face_protect.onnx",
+      "sha256": "",
+      "size": 0,
+      "providers": ["CUDAExecutionProvider", "DmlExecutionProvider", "CPUExecutionProvider"],
+      "required": false
+    },
+    {
+      "capability": "colour",
+      "filename": "colour.onnx",
+      "sha256": "",
+      "size": 0,
+      "providers": ["CUDAExecutionProvider", "DmlExecutionProvider", "CPUExecutionProvider"],
+      "required": false
+    }
+  ]
+}
