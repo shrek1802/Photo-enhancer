@@ -1,54 +1,71 @@
-# PhotoPerfect Batch AI
+# PhotoPerfect Studio
 
-Windows 11 photo analysis, enhancement and manual repair application.
+Professional AI photo enhancement and restoration for Windows 11.
+
+## Simple input options
+
+At the top of the app you can:
+
+- Select one photo
+- Select multiple photos
+- Select a complete folder
+- Drag and drop photos or a folder onto the window
+
+Original photographs are never overwritten. Finished copies are saved inside a `Professionally Enhanced` folder beside the selected photos or inside the selected source folder.
+
+## Enhancement modes
+
+- **Auto Detect** — recommended; analyses every photograph and chooses the safest processing plan automatically
+- **Auto Enhance** — lightly improves already-good photographs with better lighting, colour, contrast and natural sharpness
+- **Auto Restore** — stronger repair for faded, damaged, blurred, noisy or compressed photographs
+- **Family** — natural family-photo enhancement with protected faces
+- **Portrait** — professional portrait lighting and colour
+- **Celebrations** — consistent results for weddings, birthdays, christenings, parties and other occasions
+- **Landscape** — scenery, nature and travel photographs
+- **Low Light** — dark indoor, evening and night photographs
+- **Screenshot Recovery** — compressed shared images and obvious phone or social-media borders
+- **Advanced** — exposes the detailed processing controls
+
+## Face Identity Lock
+
+Face Identity Lock is enabled by default. It preserves real facial features and expressions, avoids generative face replacement and prefers a less dramatic faithful result when stronger processing could alter somebody's appearance.
 
 ## GPU editions
 
-Every release now provides two separate Windows builds:
+Every release provides two Windows builds:
 
-- **PhotoPerfect-Batch-AI-AMD-DirectML.exe** — intended for AMD Radeon cards such as the RX 6900 XT. It uses ONNX Runtime DirectML and can also run on other Windows GPUs.
-- **PhotoPerfect-Batch-AI-NVIDIA-CUDA.exe** — intended for NVIDIA cards such as the RTX 2060. It uses ONNX Runtime CUDA when the compatible NVIDIA driver/runtime is available.
+- **PhotoPerfect-Studio-AMD-DirectML.exe** — for AMD Radeon cards such as the RX 6900 XT
+- **PhotoPerfect-Studio-NVIDIA-CUDA.exe** — for NVIDIA cards such as the RTX 2060
 
-Both editions retain the existing CPU photographic pipeline, so batch enhancement still works when GPU neural inference is unavailable.
-
-## Neural model support
-
-The app now contains a tiled ONNX inference engine for large photographs. It automatically prefers:
-
-1. NVIDIA CUDA
-2. Windows DirectML
-3. ONNX CPU
-
-To enable true neural 2× super-resolution, place a compatible NCHW RGB ONNX model here beside the EXE:
-
-```text
-models/super_resolution_x2.onnx
-```
-
-The release ZIP creates the `models` folder for you. If the model is missing or cannot load, the app safely uses high-quality Lanczos upscaling instead of failing. Model files are kept separate because they are large and their licences must be checked before redistribution.
+Both editions retain CPU fallback processing.
 
 ## Current features
 
-- Smart analysis and quality scoring for every photograph
-- Blur, noise, exposure, highlight and contrast detection
-- Portrait, event/christening, old-photo, landscape and low-light presets
-- Face-aware exposure correction and natural portrait finishing
+- Automatic photo analysis and quality scoring
+- Per-photo processing decisions
 - Shadow and highlight recovery
+- White-balance and colour correction
 - Conservative lens-flare correction
-- Intelligent sharpening and noise reduction
+- Noise and compression cleanup
+- Intelligent sharpening
+- Screenshot-border detection
 - Horizon straightening
-- Original, 2× and 4K output options
+- Original, 2× and 4K output
 - Duplicate and near-duplicate detection
-- Best-photo selection and CSV reports
-- Before/after comparison viewer
-- Manual brush repair for flare, scratches, shadows and unwanted objects
-- Crop presets, undo, reset and separate repaired output
-- Original photographs are never overwritten
+- Best-photo selection
+- Review folders and CSV reports
+- Before/after comparison
+- Manual repair brush for marks, flare, scratches, shadows and unwanted objects
+- Crop presets, undo and reset
+
+## Optional model packs
+
+The app works without external model files. The release ZIP includes a `models` folder reserved for versioned PhotoPerfect model packs. A future model manager will download, verify, install and update those packs automatically.
 
 ## Download
 
-Open **Releases** and choose the newest AMD DirectML or NVIDIA CUDA build for the computer being used.
+Open the repository's **Releases** section and download the newest AMD DirectML or NVIDIA CUDA edition.
 
 ## Important limitation
 
-A neural model can reconstruct plausible detail, but no system can guarantee recovery of facial detail that was completely destroyed by flare, blur, clipping or missing pixels. Difficult results remain reviewable rather than silently replacing someone’s identity.
+No software can guarantee recovery of detail that was never captured or was completely destroyed. PhotoPerfect Studio uses conservative processing and review checks rather than silently inventing a different face.
