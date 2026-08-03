@@ -1,102 +1,54 @@
 # PhotoPerfect Batch AI
 
-Windows 11 desktop application for analysing, repairing and professionally enhancing complete folders of photographs while preserving every original.
+Windows 11 photo analysis, enhancement and manual repair application.
 
-## Current version: 0.3.0
+## GPU editions
 
-### Smart batch processing
+Every release now provides two separate Windows builds:
 
-- Analyses every photograph before processing it
-- Generates a quality score from 1–100
-- Detects soft focus, severe blur, darkness, clipped highlights, noise and low contrast
-- Classifies portraits, group portraits, events, landscapes, low-light and old/faded photos
-- Smart Auto chooses Natural, Strong or Maximum enhancement separately for each image
-- Produces `Photo Analysis Report.csv` with measurements and review reasons
-- Detects exact and visually similar duplicates
-- Marks the strongest image in each duplicate group as `_BEST`
+- **PhotoPerfect-Batch-AI-AMD-DirectML.exe** — intended for AMD Radeon cards such as the RX 6900 XT. It uses ONNX Runtime DirectML and can also run on other Windows GPUs.
+- **PhotoPerfect-Batch-AI-NVIDIA-CUDA.exe** — intended for NVIDIA cards such as the RTX 2060. It uses ONNX Runtime CUDA when the compatible NVIDIA driver/runtime is available.
 
-### Automatic enhancement
+Both editions retain the existing CPU photographic pipeline, so batch enhancement still works when GPU neural inference is unavailable.
 
-- Automatic white balance, exposure and colour correction
-- Selective shadow lifting and highlight recovery
-- Conservative lens-flare and coloured-glare reduction
-- Noise and compression cleanup
+## Neural model support
+
+The app now contains a tiled ONNX inference engine for large photographs. It automatically prefers:
+
+1. NVIDIA CUDA
+2. Windows DirectML
+3. ONNX CPU
+
+To enable true neural 2× super-resolution, place a compatible NCHW RGB ONNX model here beside the EXE:
+
+```text
+models/super_resolution_x2.onnx
+```
+
+The release ZIP creates the `models` folder for you. If the model is missing or cannot load, the app safely uses high-quality Lanczos upscaling instead of failing. Model files are kept separate because they are large and their licences must be checked before redistribution.
+
+## Current features
+
+- Smart analysis and quality scoring for every photograph
+- Blur, noise, exposure, highlight and contrast detection
+- Portrait, event/christening, old-photo, landscape and low-light presets
 - Face-aware exposure correction and natural portrait finishing
-- Photo-specific intelligent sharpening
-- Automatic correction of slightly crooked horizons
-- Original-size, 2× upscale or 4K-long-edge output
+- Shadow and highlight recovery
+- Conservative lens-flare correction
+- Intelligent sharpening and noise reduction
+- Horizon straightening
+- Original, 2× and 4K output options
+- Duplicate and near-duplicate detection
+- Best-photo selection and CSV reports
+- Before/after comparison viewer
+- Manual brush repair for flare, scratches, shadows and unwanted objects
+- Crop presets, undo, reset and separate repaired output
+- Original photographs are never overwritten
 
-### Processing presets
+## Download
 
-- Smart Auto
-- Event / Christening
-- Professional Portrait
-- Old Photo Restoration
-- Landscape
-- Night / Low Light
+Open **Releases** and choose the newest AMD DirectML or NVIDIA CUDA build for the computer being used.
 
-### Manual Repair Studio
+## Important limitation
 
-The main app now contains a separate hands-on editor for difficult photographs:
-
-- Open one photograph without changing the original
-- Before/after split comparison slider
-- Mouse-wheel zoom up to 600%
-- Adjustable repair brush
-- Brush over lens flare, scratches, unwanted objects or marks and inpaint them
-- Brush over unwanted shadows and selectively lift them
-- Selective softening for damaged or noisy areas
-- Automatic dust and bright-spot detection
-- Undo history and complete reset
-- Centre crop presets for 1:1, 4:5, 3:2 and 16:9
-- Save a separate repaired JPG or PNG
-- Check the newest GitHub Release from inside the editor
-
-### Output folders
-
-- `Professionally Enhanced`
-- `Review Needed`
-- `Duplicate Review`
-- `Best Photos`
-- `Photo Analysis Report.csv`
-
-## Downloading the Windows EXE
-
-Open the repository's **Releases** section and download the newest:
-
-- `PhotoPerfect-Batch-AI.exe`
-- or `PhotoPerfect-Batch-AI-Windows.zip`
-
-A new release is built automatically after changes to the main branch.
-
-## Local development
-
-```powershell
-py -3.11 -m venv .venv
-.venv\Scripts\activate
-pip install -r requirements.txt
-python app.py
-```
-
-## Build locally
-
-```powershell
-pyinstaller --noconfirm --clean --onefile --windowed --name "PhotoPerfect-Batch-AI" --collect-all cv2 --collect-all PySide6 app.py
-```
-
-The executable is written to `dist/PhotoPerfect-Batch-AI.exe`.
-
-## Remaining neural-AI capability packs
-
-- ONNX/DirectML neural super-resolution and deblurring for AMD GPUs
-- Dedicated scratch, tear and stain segmentation for badly damaged scans
-- Neural black-and-white photograph colourisation
-- Face embeddings for searchable people albums
-- Subject-aware crop positioning rather than centre-only crops
-- Signed one-click installer/updater
-
-These require separately distributed AI model files. They are not represented by inactive or misleading buttons in the current build.
-
-## Repair limitation
-
-Large lens flare, deep shadow or severe blur covering important facial detail cannot always be reconstructed faithfully because the original pixels may not contain that detail. The app makes conservative repairs and flags difficult images instead of silently inventing a different face.
+A neural model can reconstruct plausible detail, but no system can guarantee recovery of facial detail that was completely destroyed by flare, blur, clipping or missing pixels. Difficult results remain reviewable rather than silently replacing someone’s identity.
