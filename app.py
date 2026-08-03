@@ -14,22 +14,26 @@ from PySide6.QtWidgets import (
 )
 
 from enhancer import EnhanceOptions, PhotoEnhancer, supported_image
+from photo_analysis import exact_hash, hamming, perceptual_hash, write_report
 
 APP_NAME = 'PhotoPerfect Batch AI'
+APP_VERSION = '0.2.0'
 OUTPUT_FOLDER = 'Professionally Enhanced'
 
 
 class WorkerSignals(QObject):
     progress = Signal(int, int, str)
-    finished = Signal(int, int, str)
+    finished = Signal(int, int, int, str)
     failed = Signal(str)
 
 
 class BatchWorker(threading.Thread):
-    def __init__(self, folder: Path, options: EnhanceOptions, signals: WorkerSignals):
+    def __init__(self, folder: Path, options: EnhanceOptions, find_duplicates: bool,
+                 signals: WorkerSignals):
         super().__init__(daemon=True)
         self.folder = folder
         self.options = options
+        self.find_duplicates = find_duplicates
         self.signals = signals
         self.cancel_requested = False
 
@@ -49,19 +53,65 @@ class BatchWorker(threading.Thread):
                 found.append(path)
         return sorted(found)
 
+    def organise_duplicates(self, photos: list[Path], scores: dict[Path, int], output: Path) -> int:
+        if not self.find_duplicates or self.cancel_requested:
+            return 0
+        exact_seen: dict[str, Path] = {}
+        groups: list[list[tuple[Path, str]]] = []
+        duplicate_count = 0
+        for path in photos:
+            if self.cancel_requested:
+                break
+            digest = exact_hash(path)
+            if digest in exact_seen:
+                groups.append([(exact_seen[digest], perceptual_hash(exact_seen[digest])),
+                               (path, perceptual_hash(path))])
+                duplicate_count += 1
+                continue
+            exact_seen[digest] = path
+            phash = perceptual_hash(path)
+            matched = False
+            for group in groups:
+                if hamming(phash, group[0][1]) <= 7:
+                    if all(existing[0] != path for existing in group):
+                        group.append((path, phash))
+                        duplicate_count += 1
+                    matched = True
+                    break
+            if not matched:
+                groups.append([(path, phash)])
+
+        useful = [group for group in groups if len(group) > 1]
+        duplicate_root = output / 'Duplicate Review'
+        best_root = output / 'Best Photos'
+        for index, group in enumerate(useful, start=1):
+            group_dir = duplicate_root / f'Group {index:03d}'
+            group_dir.mkdir(parents=True, exist_ok=True)
+            unique_paths = list(dict.fromkeys(item[0] for item in group))
+            best = max(unique_paths, key=lambda item: scores.get(item, 0))
+            for source in unique_paths:
+                marker = '_BEST' if source == best else ''
+                shutil.copy2(source, group_dir / f'{source.stem}{marker}{source.suffix}')
+            best_root.mkdir(parents=True, exist_ok=True)
+            enhanced = output / best.relative_to(self.folder).parent / f'{best.stem}_enhanced.jpg'
+            if enhanced.exists():
+                shutil.copy2(enhanced, best_root / enhanced.name)
+        return duplicate_count
+
     def run(self) -> None:
         try:
             photos = self.photos()
             if not photos:
                 self.signals.failed.emit('No supported photographs were found in the selected folder.')
                 return
-
             output_root = self.folder / OUTPUT_FOLDER
             review_root = output_root / 'Review Needed'
             output_root.mkdir(exist_ok=True)
             enhancer = PhotoEnhancer(self.options)
             completed = 0
             review_count = 0
+            analyses = []
+            scores: dict[Path, int] = {}
 
             for index, source in enumerate(photos, start=1):
                 if self.cancel_requested:
@@ -71,10 +121,17 @@ class BatchWorker(threading.Thread):
                 self.signals.progress.emit(index - 1, len(photos), source.name)
                 try:
                     result = enhancer.process(source, destination)
+                    result.analysis.filename = str(relative)
+                    analyses.append(result.analysis)
+                    scores[source] = result.analysis.quality_score
                     if result.review_needed:
                         review = review_root / relative.parent / destination.name
                         review.parent.mkdir(parents=True, exist_ok=True)
                         shutil.copy2(destination, review)
+                        (review.with_suffix('.txt')).write_text(
+                            f'Quality score: {result.analysis.quality_score}/100\n'
+                            f'Scene: {result.analysis.scene}\n'
+                            f'Reason: {result.analysis.review_reason}\n', encoding='utf-8')
                         review_count += 1
                     completed += 1
                 except Exception:
@@ -84,8 +141,10 @@ class BatchWorker(threading.Thread):
                     review_count += 1
                 self.signals.progress.emit(index, len(photos), source.name)
 
+            write_report(output_root / 'Photo Analysis Report.csv', analyses)
+            duplicate_count = self.organise_duplicates(photos, scores, output_root)
             status = 'Cancelled' if self.cancel_requested else 'Complete'
-            self.signals.finished.emit(completed, review_count, status)
+            self.signals.finished.emit(completed, review_count, duplicate_count, status)
         except Exception:
             self.signals.failed.emit(traceback.format_exc())
 
@@ -99,18 +158,17 @@ class MainWindow(QMainWindow):
         self.signals.progress.connect(self.on_progress)
         self.signals.finished.connect(self.on_finished)
         self.signals.failed.connect(self.on_failed)
-        self.setWindowTitle(APP_NAME)
-        self.resize(780, 680)
+        self.setWindowTitle(f'{APP_NAME} v{APP_VERSION}')
+        self.resize(820, 790)
         self.build_ui()
 
     def build_ui(self) -> None:
         central = QWidget()
         layout = QVBoxLayout(central)
-        layout.setSpacing(12)
-
-        title = QLabel(APP_NAME)
+        layout.setSpacing(11)
+        title = QLabel(f'{APP_NAME}  v{APP_VERSION}')
         title.setStyleSheet('font-size: 25px; font-weight: 700;')
-        subtitle = QLabel('Select a folder and automatically repair and enhance every photograph while keeping the originals untouched.')
+        subtitle = QLabel('Smart analysis, professional enhancement, quality scoring and duplicate review for complete photo folders.')
         subtitle.setWordWrap(True)
         layout.addWidget(title)
         layout.addWidget(subtitle)
@@ -125,8 +183,11 @@ class MainWindow(QMainWindow):
         folder_layout.addWidget(choose)
         layout.addWidget(folder_box)
 
-        settings = QGroupBox('2. Enhancement settings')
+        settings = QGroupBox('2. Smart processing settings')
         form = QFormLayout(settings)
+        self.preset = QComboBox()
+        self.preset.addItems(['Smart Auto', 'Event / Christening', 'Professional Portrait',
+                              'Old Photo Restoration', 'Landscape', 'Night / Low Light'])
         self.strength = QComboBox()
         self.strength.addItems(['Natural', 'Strong', 'Maximum'])
         self.upscale = QComboBox()
@@ -137,25 +198,32 @@ class MainWindow(QMainWindow):
         self.denoise = self.checkbox('Remove noise and compression damage', True)
         self.sharpen = self.checkbox('Sharpen each photograph only where needed', True)
         self.faces = self.checkbox('Face-aware exposure correction and identity protection', True)
+        self.portrait = self.checkbox('Natural portrait finishing without replacing faces', True)
+        self.straighten = self.checkbox('Automatically straighten slightly crooked horizons', True)
         self.rotate = self.checkbox('Correct orientation from photo metadata', True)
+        self.duplicates = self.checkbox('Find duplicates and near-duplicates and select the best', True)
         self.quality = QSpinBox()
         self.quality.setRange(85, 100)
         self.quality.setValue(95)
         self.quality.setSuffix('%')
+        form.addRow('Processing preset:', self.preset)
         form.addRow('Enhancement strength:', self.strength)
         form.addRow('Output resolution:', self.upscale)
-        for widget in [self.shadow, self.highlight, self.flare, self.denoise, self.sharpen, self.faces, self.rotate]:
+        for widget in [self.shadow, self.highlight, self.flare, self.denoise,
+                       self.sharpen, self.faces, self.portrait, self.straighten,
+                       self.rotate, self.duplicates]:
             form.addRow(widget)
         form.addRow('JPEG quality:', self.quality)
         layout.addWidget(settings)
 
-        note = QLabel('Finished photographs are saved in a new <b>Professionally Enhanced</b> folder inside the selected folder. Difficult photographs are copied into <b>Review Needed</b>.')
+        note = QLabel('Outputs include <b>Professionally Enhanced</b>, <b>Review Needed</b>, '
+                      '<b>Duplicate Review</b>, <b>Best Photos</b> and a detailed CSV quality report.')
         note.setWordWrap(True)
         layout.addWidget(note)
 
         controls = QHBoxLayout()
-        self.start_button = QPushButton('Start Batch Enhancement')
-        self.start_button.setMinimumHeight(44)
+        self.start_button = QPushButton('Analyse and Enhance Folder')
+        self.start_button.setMinimumHeight(46)
         self.start_button.clicked.connect(self.start_batch)
         self.cancel_button = QPushButton('Cancel')
         self.cancel_button.setEnabled(False)
@@ -168,7 +236,7 @@ class MainWindow(QMainWindow):
         self.status = QLabel('Ready')
         self.log = QTextEdit()
         self.log.setReadOnly(True)
-        self.log.setMaximumHeight(130)
+        self.log.setMaximumHeight(120)
         layout.addWidget(self.progress)
         layout.addWidget(self.status)
         layout.addWidget(self.log)
@@ -192,17 +260,13 @@ class MainWindow(QMainWindow):
 
     def options(self) -> EnhanceOptions:
         return EnhanceOptions(
-            strength=self.strength.currentText().lower(),
-            upscale=self.upscale.currentText(),
-            lift_shadows=self.shadow.isChecked(),
-            recover_highlights=self.highlight.isChecked(),
-            reduce_flare=self.flare.isChecked(),
-            denoise=self.denoise.isChecked(),
-            sharpen=self.sharpen.isChecked(),
-            face_aware=self.faces.isChecked(),
-            auto_rotate=self.rotate.isChecked(),
-            jpeg_quality=self.quality.value(),
-        )
+            preset=self.preset.currentText(), strength=self.strength.currentText().lower(),
+            upscale=self.upscale.currentText(), lift_shadows=self.shadow.isChecked(),
+            recover_highlights=self.highlight.isChecked(), reduce_flare=self.flare.isChecked(),
+            denoise=self.denoise.isChecked(), sharpen=self.sharpen.isChecked(),
+            face_aware=self.faces.isChecked(), portrait_finish=self.portrait.isChecked(),
+            straighten_horizon=self.straighten.isChecked(), auto_rotate=self.rotate.isChecked(),
+            jpeg_quality=self.quality.value())
 
     def start_batch(self) -> None:
         if not self.folder:
@@ -216,8 +280,8 @@ class MainWindow(QMainWindow):
         self.start_button.setEnabled(False)
         self.cancel_button.setEnabled(True)
         self.progress.setValue(0)
-        self.log.append('Starting batch...')
-        self.worker = BatchWorker(self.folder, self.options(), self.signals)
+        self.log.append('Starting smart analysis and enhancement...')
+        self.worker = BatchWorker(self.folder, self.options(), self.duplicates.isChecked(), self.signals)
         self.worker.start()
 
     def cancel_batch(self) -> None:
@@ -230,12 +294,13 @@ class MainWindow(QMainWindow):
         self.progress.setValue(int(current / max(total, 1) * 100))
         self.status.setText(f'Processing {current}/{total}: {filename}')
 
-    def on_finished(self, completed: int, review: int, status: str) -> None:
+    def on_finished(self, completed: int, review: int, duplicates: int, status: str) -> None:
         self.start_button.setEnabled(True)
         self.cancel_button.setEnabled(False)
         if status == 'Complete':
             self.progress.setValue(100)
-        message = f'{status}: {completed} processed, {review} flagged for review.'
+        message = (f'{status}: {completed} processed, {review} flagged for review, '
+                   f'{duplicates} duplicate/near-duplicate matches found.')
         self.status.setText(message)
         self.log.append(message)
         QMessageBox.information(self, APP_NAME, message)
