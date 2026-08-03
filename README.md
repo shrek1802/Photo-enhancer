@@ -2,18 +2,20 @@
 
 Windows 11 desktop application for analysing, repairing and professionally enhancing complete folders of photographs while preserving every original.
 
-## Current version: 0.2.0
+## Current version: 0.3.0
 
-### Smart processing
+### Smart batch processing
 
 - Analyses every photograph before processing it
 - Generates a quality score from 1–100
 - Detects soft focus, severe blur, darkness, clipped highlights, noise and low contrast
 - Classifies portraits, group portraits, events, landscapes, low-light and old/faded photos
 - Smart Auto chooses Natural, Strong or Maximum enhancement separately for each image
-- Produces `Photo Analysis Report.csv` with the measurements and review reasons
+- Produces `Photo Analysis Report.csv` with measurements and review reasons
+- Detects exact and visually similar duplicates
+- Marks the strongest image in each duplicate group as `_BEST`
 
-### Enhancement
+### Automatic enhancement
 
 - Automatic white balance, exposure and colour correction
 - Selective shadow lifting and highlight recovery
@@ -24,7 +26,7 @@ Windows 11 desktop application for analysing, repairing and professionally enhan
 - Automatic correction of slightly crooked horizons
 - Original-size, 2× upscale or 4K-long-edge output
 
-### Presets
+### Processing presets
 
 - Smart Auto
 - Event / Christening
@@ -33,16 +35,30 @@ Windows 11 desktop application for analysing, repairing and professionally enhan
 - Landscape
 - Night / Low Light
 
-### Sorting and review
+### Manual Repair Studio
 
-- Processes complete folders including subfolders
-- Keeps every original photograph untouched
-- Creates `Professionally Enhanced` inside the selected folder
-- Places difficult photographs and explanation files into `Review Needed`
-- Detects exact and visually similar duplicates
-- Places duplicate groups into `Duplicate Review`
-- Marks the highest-scoring image in each group as `_BEST`
-- Copies the enhanced winners into `Best Photos`
+The main app now contains a separate hands-on editor for difficult photographs:
+
+- Open one photograph without changing the original
+- Before/after split comparison slider
+- Mouse-wheel zoom up to 600%
+- Adjustable repair brush
+- Brush over lens flare, scratches, unwanted objects or marks and inpaint them
+- Brush over unwanted shadows and selectively lift them
+- Selective softening for damaged or noisy areas
+- Automatic dust and bright-spot detection
+- Undo history and complete reset
+- Centre crop presets for 1:1, 4:5, 3:2 and 16:9
+- Save a separate repaired JPG or PNG
+- Check the newest GitHub Release from inside the editor
+
+### Output folders
+
+- `Professionally Enhanced`
+- `Review Needed`
+- `Duplicate Review`
+- `Best Photos`
+- `Photo Analysis Report.csv`
 
 ## Downloading the Windows EXE
 
@@ -70,16 +86,16 @@ pyinstaller --noconfirm --clean --onefile --windowed --name "PhotoPerfect-Batch-
 
 The executable is written to `dist/PhotoPerfect-Batch-AI.exe`.
 
-## Planned capability packs
+## Remaining neural-AI capability packs
 
-- Before/after comparison viewer with linked zoom
-- Manual repair brush and object removal
-- Neural super-resolution, deblurring and face restoration using ONNX/DirectML for AMD GPUs
-- Scratch, tear and stain restoration for scanned photographs
-- Colourisation controls for black-and-white photos
-- Face grouping and searchable people albums
-- Automatic crop presets for prints and social media
-- One-click updater using GitHub Releases
+- ONNX/DirectML neural super-resolution and deblurring for AMD GPUs
+- Dedicated scratch, tear and stain segmentation for badly damaged scans
+- Neural black-and-white photograph colourisation
+- Face embeddings for searchable people albums
+- Subject-aware crop positioning rather than centre-only crops
+- Signed one-click installer/updater
+
+These require separately distributed AI model files. They are not represented by inactive or misleading buttons in the current build.
 
 ## Repair limitation
 
