@@ -11,7 +11,30 @@ permissions:
   contents: write
 
 jobs:
+  test:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+      - name: Install test dependencies
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - name: Compile source
+        shell: pwsh
+        run: python -m compileall -q .
+      - name: Run Phase 2 regression tests
+        shell: pwsh
+        run: pytest -q
+
   build-windows:
+    needs: test
     runs-on: windows-latest
     strategy:
       fail-fast: false
@@ -41,12 +64,6 @@ jobs:
           pip install -r requirements.txt
           pip install "${{ matrix.runtime }}"
 
-      - name: Validate source and PhotoPerfect Engine
-        shell: pwsh
-        run: |
-          python -m py_compile app.py enhancer.py photoperfect_engine.py auto_ai_pipeline.py identity_guard.py photo_analysis.py repair_editor.py
-          python -m unittest discover -s tests -p "test_*.py" -v
-
       - name: Build standalone EXE
         shell: pwsh
         run: |
@@ -55,6 +72,7 @@ jobs:
             --collect-all cv2 `
             --collect-all PySide6 `
             --collect-all onnxruntime `
+            --hidden-import model_manager `
             app.py
 
       - name: Package build
@@ -62,9 +80,11 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force -Path package | Out-Null
           New-Item -ItemType Directory -Force -Path package/models | Out-Null
+          New-Item -ItemType Directory -Force -Path package/model_packs | Out-Null
           Copy-Item "dist/${{ matrix.exe_name }}.exe" "package/${{ matrix.exe_name }}.exe"
           Copy-Item README.md "package/README.txt"
-          Set-Content -Path "package/models/MODEL_PACK_INFO.txt" -Value "PhotoPerfect Studio runs without optional models. Future versioned PhotoPerfect model packs will install into this folder automatically."
+          Copy-Item "model_packs/essentials-manifest.template.json" "package/model_packs/essentials-manifest.template.json"
+          Set-Content -Path "package/models/MODEL_PACK_INFO.txt" -Value "PhotoPerfect Studio v2 uses versioned model packs. Packs are SHA-256 verified and installed atomically. The app remains usable with built-in recovery when no pack is installed."
           Compress-Archive -Path "package/*" -DestinationPath "${{ matrix.exe_name }}-Windows.zip" -Force
 
       - name: Upload build artifact
@@ -80,19 +100,19 @@ jobs:
         if: github.event_name != 'pull_request'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: studio-v2.0.${{ github.run_number }}
-          name: PhotoPerfect Studio v2.0.${{ github.run_number }}
+          tag_name: studio-v2.1.${{ github.run_number }}
+          name: PhotoPerfect Studio v2.1.${{ github.run_number }}
           body: |
-            PhotoPerfect Studio with PhotoPerfect Engine v2.
+            PhotoPerfect Studio Phase 2 for Windows 11.
 
-            Engine improvements:
-            - Auto Detect now inspects and classifies every image first
-            - Dedicated Screenshot Recovery and Black & White Restore plans
-            - JPEG artefact, blur, noise, exposure and low-resolution detection
-            - Per-image repair plans instead of one generic filter chain
-            - Before/after quality validation with rejection of degraded results
-            - Identity Lock remains enabled by default
-            - Automatic 2x recovery for screenshots and very small images
+            Phase 2 improvements:
+            - stronger screenshot and social-media interface detection
+            - dedicated black-and-white restoration
+            - dynamic repair plans
+            - gentle, balanced and strong candidate pipelines
+            - automatic quality scoring and best-candidate selection
+            - versioned model-pack manager with SHA-256 verification and rollback
+            - regression tests must pass before Windows builds
 
             Choose AMD DirectML for Radeon cards including RX 6900 XT.
             Choose NVIDIA CUDA for GeForce cards including RTX 2060.
