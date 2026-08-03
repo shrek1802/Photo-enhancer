@@ -18,7 +18,7 @@ from photo_analysis import exact_hash, hamming, perceptual_hash, write_report
 from repair_editor import RepairEditor
 
 APP_NAME = 'PhotoPerfect Batch AI'
-APP_VERSION = '0.3.0'
+APP_VERSION = '0.5.0'
 OUTPUT_FOLDER = 'Professionally Enhanced'
 
 
@@ -29,10 +29,13 @@ class WorkerSignals(QObject):
 
 
 class BatchWorker(threading.Thread):
-    def __init__(self, folder: Path, options: EnhanceOptions, find_duplicates: bool,
+    def __init__(self, photos: list[Path], output_root: Path, common_root: Path,
+                 options: EnhanceOptions, find_duplicates: bool,
                  signals: WorkerSignals):
         super().__init__(daemon=True)
-        self.folder = folder
+        self.selected_photos = sorted(dict.fromkeys(photos))
+        self.output_root = output_root
+        self.common_root = common_root
         self.options = options
         self.find_duplicates = find_duplicates
         self.signals = signals
@@ -41,21 +44,14 @@ class BatchWorker(threading.Thread):
     def cancel(self) -> None:
         self.cancel_requested = True
 
-    def photos(self) -> list[Path]:
-        output = self.folder / OUTPUT_FOLDER
-        found: list[Path] = []
-        for path in self.folder.rglob('*'):
-            if not path.is_file() or not supported_image(path):
-                continue
-            try:
-                path.relative_to(output)
-                continue
-            except ValueError:
-                found.append(path)
-        return sorted(found)
+    def relative_path(self, source: Path) -> Path:
+        try:
+            return source.relative_to(self.common_root)
+        except ValueError:
+            return Path(source.name)
 
-    def organise_duplicates(self, photos: list[Path], scores: dict[Path, int], output: Path) -> int:
-        if not self.find_duplicates or self.cancel_requested:
+    def organise_duplicates(self, photos: list[Path], scores: dict[Path, int]) -> int:
+        if not self.find_duplicates or self.cancel_requested or len(photos) < 2:
             return 0
         exact_seen: dict[str, Path] = {}
         groups: list[list[tuple[Path, str]]] = []
@@ -83,8 +79,8 @@ class BatchWorker(threading.Thread):
                 groups.append([(path, phash)])
 
         useful = [group for group in groups if len(group) > 1]
-        duplicate_root = output / 'Duplicate Review'
-        best_root = output / 'Best Photos'
+        duplicate_root = self.output_root / 'Duplicate Review'
+        best_root = self.output_root / 'Best Photos'
         for index, group in enumerate(useful, start=1):
             group_dir = duplicate_root / f'Group {index:03d}'
             group_dir.mkdir(parents=True, exist_ok=True)
@@ -94,20 +90,21 @@ class BatchWorker(threading.Thread):
                 marker = '_BEST' if source == best else ''
                 shutil.copy2(source, group_dir / f'{source.stem}{marker}{source.suffix}')
             best_root.mkdir(parents=True, exist_ok=True)
-            enhanced = output / best.relative_to(self.folder).parent / f'{best.stem}_enhanced.jpg'
+            relative = self.relative_path(best)
+            enhanced = self.output_root / relative.parent / f'{best.stem}_enhanced.jpg'
             if enhanced.exists():
                 shutil.copy2(enhanced, best_root / enhanced.name)
         return duplicate_count
 
     def run(self) -> None:
         try:
-            photos = self.photos()
+            photos = [path for path in self.selected_photos if path.is_file() and supported_image(path)]
             if not photos:
-                self.signals.failed.emit('No supported photographs were found in the selected folder.')
+                self.signals.failed.emit('No supported photographs were selected.')
                 return
-            output_root = self.folder / OUTPUT_FOLDER
-            review_root = output_root / 'Review Needed'
-            output_root.mkdir(exist_ok=True)
+
+            review_root = self.output_root / 'Review Needed'
+            self.output_root.mkdir(parents=True, exist_ok=True)
             enhancer = PhotoEnhancer(self.options)
             completed = 0
             review_count = 0
@@ -117,8 +114,8 @@ class BatchWorker(threading.Thread):
             for index, source in enumerate(photos, start=1):
                 if self.cancel_requested:
                     break
-                relative = source.relative_to(self.folder)
-                destination = output_root / relative.parent / f'{source.stem}_enhanced.jpg'
+                relative = self.relative_path(source)
+                destination = self.output_root / relative.parent / f'{source.stem}_enhanced.jpg'
                 self.signals.progress.emit(index - 1, len(photos), source.name)
                 try:
                     result = enhancer.process(source, destination)
@@ -129,10 +126,11 @@ class BatchWorker(threading.Thread):
                         review = review_root / relative.parent / destination.name
                         review.parent.mkdir(parents=True, exist_ok=True)
                         shutil.copy2(destination, review)
+                        reason = result.analysis.review_reason or 'Automatic quality check requested review.'
                         review.with_suffix('.txt').write_text(
                             f'Quality score: {result.analysis.quality_score}/100\n'
                             f'Scene: {result.analysis.scene}\n'
-                            f'Reason: {result.analysis.review_reason}\n', encoding='utf-8')
+                            f'Reason: {reason}\n', encoding='utf-8')
                         review_count += 1
                     completed += 1
                 except Exception:
@@ -142,8 +140,8 @@ class BatchWorker(threading.Thread):
                     review_count += 1
                 self.signals.progress.emit(index, len(photos), source.name)
 
-            write_report(output_root / 'Photo Analysis Report.csv', analyses)
-            duplicate_count = self.organise_duplicates(photos, scores, output_root)
+            write_report(self.output_root / 'Photo Analysis Report.csv', analyses)
+            duplicate_count = self.organise_duplicates(photos, scores)
             status = 'Cancelled' if self.cancel_requested else 'Complete'
             self.signals.finished.emit(completed, review_count, duplicate_count, status)
         except Exception:
@@ -153,7 +151,9 @@ class BatchWorker(threading.Thread):
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.folder: Path | None = None
+        self.selected_photos: list[Path] = []
+        self.output_root: Path | None = None
+        self.common_root: Path | None = None
         self.worker: BatchWorker | None = None
         self.editor_windows: list[RepairEditor] = []
         self.signals = WorkerSignals()
@@ -161,7 +161,7 @@ class MainWindow(QMainWindow):
         self.signals.finished.connect(self.on_finished)
         self.signals.failed.connect(self.on_failed)
         self.setWindowTitle(f'{APP_NAME} v{APP_VERSION}')
-        self.resize(840, 830)
+        self.resize(860, 850)
         self.build_ui()
 
     def build_ui(self) -> None:
@@ -170,20 +170,32 @@ class MainWindow(QMainWindow):
         layout.setSpacing(11)
         title = QLabel(f'{APP_NAME}  v{APP_VERSION}')
         title.setStyleSheet('font-size: 25px; font-weight: 700;')
-        subtitle = QLabel('Smart batch enhancement plus a hands-on repair studio for flare, shadows, scratches and unwanted objects.')
+        subtitle = QLabel('Choose one photo, several photos, or a complete folder. Face Identity Lock and Smart Auto remain enabled by default.')
         subtitle.setWordWrap(True)
         layout.addWidget(title)
         layout.addWidget(subtitle)
 
-        folder_box = QGroupBox('1. Select photographs')
-        folder_layout = QHBoxLayout(folder_box)
-        self.folder_label = QLabel('No folder selected')
-        self.folder_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
-        choose = QPushButton('Select Photo Folder')
-        choose.clicked.connect(self.select_folder)
-        folder_layout.addWidget(self.folder_label, 1)
-        folder_layout.addWidget(choose)
-        layout.addWidget(folder_box)
+        input_box = QGroupBox('1. Choose photos')
+        input_layout = QVBoxLayout(input_box)
+        button_row = QHBoxLayout()
+        one_button = QPushButton('Load One Photo')
+        one_button.setMinimumHeight(44)
+        one_button.clicked.connect(self.select_one_photo)
+        many_button = QPushButton('Load Multiple Photos')
+        many_button.setMinimumHeight(44)
+        many_button.clicked.connect(self.select_multiple_photos)
+        folder_button = QPushButton('Load Photo Folder')
+        folder_button.setMinimumHeight(44)
+        folder_button.clicked.connect(self.select_folder)
+        button_row.addWidget(one_button)
+        button_row.addWidget(many_button)
+        button_row.addWidget(folder_button)
+        self.selection_label = QLabel('Nothing selected')
+        self.selection_label.setWordWrap(True)
+        self.selection_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        input_layout.addLayout(button_row)
+        input_layout.addWidget(self.selection_label)
+        layout.addWidget(input_box)
 
         settings = QGroupBox('2. Smart processing settings')
         form = QFormLayout(settings)
@@ -199,8 +211,8 @@ class MainWindow(QMainWindow):
         self.flare = self.checkbox('Reduce small lens flare spots and coloured glare', True)
         self.denoise = self.checkbox('Remove noise and compression damage', True)
         self.sharpen = self.checkbox('Sharpen each photograph only where needed', True)
-        self.faces = self.checkbox('Face-aware exposure correction and identity protection', True)
-        self.portrait = self.checkbox('Natural portrait finishing without replacing faces', True)
+        self.faces = self.checkbox('Face Identity Lock — preserve the original face exactly', True)
+        self.portrait = self.checkbox('Light professional portrait polish without replacing faces', True)
         self.straighten = self.checkbox('Automatically straighten slightly crooked horizons', True)
         self.rotate = self.checkbox('Correct orientation from photo metadata', True)
         self.duplicates = self.checkbox('Find duplicates and near-duplicates and select the best', True)
@@ -218,13 +230,12 @@ class MainWindow(QMainWindow):
         form.addRow('JPEG quality:', self.quality)
         layout.addWidget(settings)
 
-        note = QLabel('Batch outputs include <b>Professionally Enhanced</b>, <b>Review Needed</b>, '
-                      '<b>Duplicate Review</b>, <b>Best Photos</b> and a CSV quality report.')
+        note = QLabel('For individual or selected photos, the app creates <b>Professionally Enhanced</b> beside those photos. For a folder, it creates the output folder inside the selected folder.')
         note.setWordWrap(True)
         layout.addWidget(note)
 
         controls = QHBoxLayout()
-        self.start_button = QPushButton('Analyse and Enhance Folder')
+        self.start_button = QPushButton('Analyse and Enhance Selection')
         self.start_button.setMinimumHeight(46)
         self.start_button.clicked.connect(self.start_batch)
         self.cancel_button = QPushButton('Cancel')
@@ -249,7 +260,7 @@ class MainWindow(QMainWindow):
         self.status = QLabel('Ready')
         self.log = QTextEdit()
         self.log.setReadOnly(True)
-        self.log.setMaximumHeight(110)
+        self.log.setMaximumHeight(105)
         layout.addWidget(self.progress)
         layout.addWidget(self.status)
         layout.addWidget(self.log)
@@ -264,12 +275,58 @@ class MainWindow(QMainWindow):
         box.setChecked(checked)
         return box
 
+    @staticmethod
+    def image_filter() -> str:
+        return 'Images (*.jpg *.jpeg *.png *.webp *.bmp *.tif *.tiff);;All files (*.*)'
+
+    def apply_file_selection(self, files: list[str]) -> None:
+        photos = [Path(item) for item in files if supported_image(Path(item))]
+        if not photos:
+            return
+        self.selected_photos = photos
+        parents = {path.parent for path in photos}
+        if len(parents) == 1:
+            self.common_root = next(iter(parents))
+            self.output_root = self.common_root / OUTPUT_FOLDER
+        else:
+            self.common_root = Path(Path.commonpath([str(path.parent) for path in photos]))
+            self.output_root = self.common_root / OUTPUT_FOLDER
+        if len(photos) == 1:
+            self.selection_label.setText(f'1 photo selected: {photos[0]}')
+        else:
+            self.selection_label.setText(f'{len(photos)} photos selected. Output: {self.output_root}')
+        self.log.append(self.selection_label.text())
+
+    def select_one_photo(self) -> None:
+        filename, _ = QFileDialog.getOpenFileName(self, 'Select one photo', '', self.image_filter())
+        if filename:
+            self.apply_file_selection([filename])
+
+    def select_multiple_photos(self) -> None:
+        filenames, _ = QFileDialog.getOpenFileNames(self, 'Select one or more photos', '', self.image_filter())
+        if filenames:
+            self.apply_file_selection(filenames)
+
     def select_folder(self) -> None:
         selected = QFileDialog.getExistingDirectory(self, 'Select photo folder')
-        if selected:
-            self.folder = Path(selected)
-            self.folder_label.setText(str(self.folder))
-            self.log.append(f'Selected: {self.folder}')
+        if not selected:
+            return
+        folder = Path(selected)
+        output = folder / OUTPUT_FOLDER
+        photos: list[Path] = []
+        for path in folder.rglob('*'):
+            if not path.is_file() or not supported_image(path):
+                continue
+            try:
+                path.relative_to(output)
+                continue
+            except ValueError:
+                photos.append(path)
+        self.selected_photos = sorted(photos)
+        self.common_root = folder
+        self.output_root = output
+        self.selection_label.setText(f'Folder selected: {folder} — {len(photos)} supported photo(s) found')
+        self.log.append(self.selection_label.text())
 
     def open_repair_editor(self) -> None:
         editor = RepairEditor(parent=self)
@@ -288,19 +345,20 @@ class MainWindow(QMainWindow):
             jpeg_quality=self.quality.value())
 
     def start_batch(self) -> None:
-        if not self.folder:
-            QMessageBox.information(self, APP_NAME, 'Please select a photo folder first.')
+        if not self.selected_photos or not self.output_root or not self.common_root:
+            QMessageBox.information(self, APP_NAME, 'Please load one photo, multiple photos, or a folder first.')
             return
-        output = self.folder / OUTPUT_FOLDER
-        if output.exists() and QMessageBox.question(
+        if self.output_root.exists() and QMessageBox.question(
             self, APP_NAME, 'The output folder already exists. Existing matching files may be replaced. Continue?'
         ) != QMessageBox.Yes:
             return
         self.start_button.setEnabled(False)
         self.cancel_button.setEnabled(True)
         self.progress.setValue(0)
-        self.log.append('Starting smart analysis and enhancement...')
-        self.worker = BatchWorker(self.folder, self.options(), self.duplicates.isChecked(), self.signals)
+        self.log.append(f'Starting smart analysis for {len(self.selected_photos)} photo(s)...')
+        self.worker = BatchWorker(
+            self.selected_photos, self.output_root, self.common_root,
+            self.options(), self.duplicates.isChecked(), self.signals)
         self.worker.start()
 
     def cancel_batch(self) -> None:
@@ -319,8 +377,8 @@ class MainWindow(QMainWindow):
         if status == 'Complete':
             self.progress.setValue(100)
         message = (f'{status}: {completed} processed, {review} flagged for review, '
-                   f'{duplicates} duplicate/near-duplicate matches found.')
-        self.status.setText(message)
+                   f'{duplicates} duplicate/near-duplicate matches found.\nOutput: {self.output_root}')
+        self.status.setText(message.replace('\n', ' '))
         self.log.append(message)
         QMessageBox.information(self, APP_NAME, message)
 
