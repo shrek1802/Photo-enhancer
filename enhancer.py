@@ -8,6 +8,7 @@ import numpy as np
 from PIL import Image, ImageOps
 
 from ai_engine import NeuralEngine
+from auto_ai_pipeline import AutomaticAIPipeline, PipelineReport
 from photo_analysis import PhotoAnalysis, PhotoAnalyser
 
 SUPPORTED = {'.jpg', '.jpeg', '.png', '.webp', '.bmp', '.tif', '.tiff'}
@@ -32,6 +33,8 @@ class EnhanceOptions:
     straighten_horizon: bool = True
     portrait_finish: bool = True
     neural_ai: bool = True
+    automatic_restoration: bool = True
+    remove_screenshot_ui: bool = True
     jpeg_quality: int = 95
 
 
@@ -39,6 +42,7 @@ class EnhanceOptions:
 class ProcessResult:
     review_needed: bool
     analysis: PhotoAnalysis
+    pipeline_report: PipelineReport | None = None
 
 
 class PhotoEnhancer:
@@ -46,13 +50,14 @@ class PhotoEnhancer:
         self.options = options
         self.analyser = PhotoAnalyser()
         self.neural = NeuralEngine(enabled=options.neural_ai)
+        self.automatic = AutomaticAIPipeline()
         self.face_detector = cv2.CascadeClassifier(
             cv2.data.haarcascades + 'haarcascade_frontalface_default.xml'
         )
 
     @property
     def engine_message(self) -> str:
-        return self.neural.status.message
+        return f'{self.neural.status.message}; restoration engine: {self.automatic.provider}'
 
     def _read(self, path: Path) -> np.ndarray:
         image = Image.open(path)
@@ -201,6 +206,13 @@ class PhotoEnhancer:
         analysis = self.analyser.analyse(source)
         strength = self._effective_strength(analysis)
         image = self._read(source)
+        pipeline_report = None
+
+        if self.options.automatic_restoration:
+            image, pipeline_report = self.automatic.restore(
+                image, allow_ui_crop=self.options.remove_screenshot_ui
+            )
+
         if self.options.straighten_horizon:
             image = self._straighten(image, analysis.horizon_angle)
         image = self._tone(self._white_balance(image), strength)
@@ -209,12 +221,17 @@ class PhotoEnhancer:
             image = self._reduce_flare(image)
         if self.options.face_aware:
             image = self._faces(image, strength)
-        if self.options.denoise:
+        if self.options.denoise and not self.options.automatic_restoration:
             image = self._denoise(image, strength, analysis)
         if self.options.sharpen:
             image = self._sharpen(image, analysis, strength)
         image = self._upscale(image)
+
         destination.parent.mkdir(parents=True, exist_ok=True)
         if not cv2.imwrite(str(destination), image, [cv2.IMWRITE_JPEG_QUALITY, self.options.jpeg_quality]):
             raise OSError(f'Could not write {destination}')
-        return ProcessResult(bool(analysis.review_reason), analysis)
+
+        review = bool(analysis.review_reason)
+        if pipeline_report and pipeline_report.confidence < 45:
+            review = True
+        return ProcessResult(review, analysis, pipeline_report)
