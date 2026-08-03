@@ -15,9 +15,10 @@ from PySide6.QtWidgets import (
 
 from enhancer import EnhanceOptions, PhotoEnhancer, supported_image
 from photo_analysis import exact_hash, hamming, perceptual_hash, write_report
+from repair_editor import RepairEditor
 
 APP_NAME = 'PhotoPerfect Batch AI'
-APP_VERSION = '0.2.0'
+APP_VERSION = '0.3.0'
 OUTPUT_FOLDER = 'Professionally Enhanced'
 
 
@@ -128,7 +129,7 @@ class BatchWorker(threading.Thread):
                         review = review_root / relative.parent / destination.name
                         review.parent.mkdir(parents=True, exist_ok=True)
                         shutil.copy2(destination, review)
-                        (review.with_suffix('.txt')).write_text(
+                        review.with_suffix('.txt').write_text(
                             f'Quality score: {result.analysis.quality_score}/100\n'
                             f'Scene: {result.analysis.scene}\n'
                             f'Reason: {result.analysis.review_reason}\n', encoding='utf-8')
@@ -154,12 +155,13 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.folder: Path | None = None
         self.worker: BatchWorker | None = None
+        self.editor_windows: list[RepairEditor] = []
         self.signals = WorkerSignals()
         self.signals.progress.connect(self.on_progress)
         self.signals.finished.connect(self.on_finished)
         self.signals.failed.connect(self.on_failed)
         self.setWindowTitle(f'{APP_NAME} v{APP_VERSION}')
-        self.resize(820, 790)
+        self.resize(840, 830)
         self.build_ui()
 
     def build_ui(self) -> None:
@@ -168,7 +170,7 @@ class MainWindow(QMainWindow):
         layout.setSpacing(11)
         title = QLabel(f'{APP_NAME}  v{APP_VERSION}')
         title.setStyleSheet('font-size: 25px; font-weight: 700;')
-        subtitle = QLabel('Smart analysis, professional enhancement, quality scoring and duplicate review for complete photo folders.')
+        subtitle = QLabel('Smart batch enhancement plus a hands-on repair studio for flare, shadows, scratches and unwanted objects.')
         subtitle.setWordWrap(True)
         layout.addWidget(title)
         layout.addWidget(subtitle)
@@ -216,8 +218,8 @@ class MainWindow(QMainWindow):
         form.addRow('JPEG quality:', self.quality)
         layout.addWidget(settings)
 
-        note = QLabel('Outputs include <b>Professionally Enhanced</b>, <b>Review Needed</b>, '
-                      '<b>Duplicate Review</b>, <b>Best Photos</b> and a detailed CSV quality report.')
+        note = QLabel('Batch outputs include <b>Professionally Enhanced</b>, <b>Review Needed</b>, '
+                      '<b>Duplicate Review</b>, <b>Best Photos</b> and a CSV quality report.')
         note.setWordWrap(True)
         layout.addWidget(note)
 
@@ -232,11 +234,22 @@ class MainWindow(QMainWindow):
         controls.addWidget(self.cancel_button)
         layout.addLayout(controls)
 
+        editor_box = QGroupBox('3. Manual repair and comparison')
+        editor_layout = QHBoxLayout(editor_box)
+        editor_text = QLabel('Open one difficult photograph to brush away flare, scratches, unwanted objects or shadows, compare before/after and crop it.')
+        editor_text.setWordWrap(True)
+        editor_button = QPushButton('Open Manual Repair Studio')
+        editor_button.setMinimumHeight(42)
+        editor_button.clicked.connect(self.open_repair_editor)
+        editor_layout.addWidget(editor_text, 1)
+        editor_layout.addWidget(editor_button)
+        layout.addWidget(editor_box)
+
         self.progress = QProgressBar()
         self.status = QLabel('Ready')
         self.log = QTextEdit()
         self.log.setReadOnly(True)
-        self.log.setMaximumHeight(120)
+        self.log.setMaximumHeight(110)
         layout.addWidget(self.progress)
         layout.addWidget(self.status)
         layout.addWidget(self.log)
@@ -257,6 +270,12 @@ class MainWindow(QMainWindow):
             self.folder = Path(selected)
             self.folder_label.setText(str(self.folder))
             self.log.append(f'Selected: {self.folder}')
+
+    def open_repair_editor(self) -> None:
+        editor = RepairEditor(parent=self)
+        editor.show()
+        self.editor_windows.append(editor)
+        editor.destroyed.connect(lambda: self.editor_windows.remove(editor) if editor in self.editor_windows else None)
 
     def options(self) -> EnhanceOptions:
         return EnhanceOptions(
