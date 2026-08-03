@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from pathlib import Path
 
 import cv2
 import numpy as np
@@ -22,6 +21,8 @@ class Inspection:
     dark_fraction: float
     highlight_fraction: float
     contrast: float
+    text_edge_score: float = 0.0
+    social_ui_score: float = 0.0
     problems: list[str] = field(default_factory=list)
 
 
@@ -32,6 +33,7 @@ class RepairPlan:
     requested_mode: str
     confidence: int
     inspection: Inspection
+    strategy: str = 'balanced'
 
 
 @dataclass
@@ -40,14 +42,16 @@ class Validation:
     after_score: float
     accepted: bool
     improvement: float
+    attempts: int = 1
+    selected_strategy: str = 'balanced'
+    reasons: list[str] = field(default_factory=list)
 
 
 class PhotoPerfectEngine:
-    """Deterministic Auto Detect engine used before specialist ONNX models.
+    """Phase 2 adaptive engine.
 
-    It classifies the input, builds a repair plan, applies safe photographic
-    corrections and validates that the result is not materially worse. It does
-    not generate or replace faces.
+    It inspects, classifies, builds a dynamic repair plan, tries several safe
+    strategies, and keeps the highest-scoring result. It never generates faces.
     """
 
     def __init__(self) -> None:
@@ -56,14 +60,26 @@ class PhotoPerfectEngine:
         )
 
     @staticmethod
-    def _quality(image: np.ndarray) -> float:
+    def _metrics(image: np.ndarray) -> dict[str, float]:
         gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-        sharp = min(np.log1p(cv2.Laplacian(gray, cv2.CV_64F).var()) * 8.0, 40.0)
-        contrast = min(float(gray.std()) / 55.0, 1.0) * 23.0
-        clipped = float(np.mean(gray >= 250)) * 95.0
-        crushed = float(np.mean(gray <= 8)) * 80.0
+        lap = cv2.Laplacian(gray, cv2.CV_64F).var()
         residual = gray.astype(np.float32) - cv2.GaussianBlur(gray, (3, 3), 0).astype(np.float32)
-        noise = max(float(residual.std()) - 8.0, 0.0) * 0.9
+        return {
+            'sharpness': float(lap),
+            'contrast': float(gray.std()),
+            'noise': float(residual.std()),
+            'dark': float(np.mean(gray <= 8)),
+            'clipped': float(np.mean(gray >= 250)),
+        }
+
+    @classmethod
+    def _quality(cls, image: np.ndarray) -> float:
+        m = cls._metrics(image)
+        sharp = min(np.log1p(m['sharpness']) * 8.2, 41.0)
+        contrast = min(m['contrast'] / 55.0, 1.0) * 23.0
+        clipped = m['clipped'] * 95.0
+        crushed = m['dark'] * 80.0
+        noise = max(m['noise'] - 8.0, 0.0) * 0.9
         return float(np.clip(35.0 + sharp + contrast - clipped - crushed - noise, 0, 100))
 
     @staticmethod
@@ -72,32 +88,37 @@ class PhotoPerfectEngine:
             return 0.0
         vertical = np.abs(np.diff(gray.astype(np.float32), axis=1))
         horizontal = np.abs(np.diff(gray.astype(np.float32), axis=0))
-        v_bound = float(vertical[:, 7::8].mean()) if vertical.shape[1] > 8 else 0.0
-        h_bound = float(horizontal[7::8, :].mean()) if horizontal.shape[0] > 8 else 0.0
-        v_all = float(vertical.mean()) + 1e-6
-        h_all = float(horizontal.mean()) + 1e-6
-        ratio = ((v_bound / v_all) + (h_bound / h_all)) / 2.0
-        return float(np.clip((ratio - 0.9) * 100.0, 0, 100))
+        vb = float(vertical[:, 7::8].mean()) if vertical.shape[1] > 8 else 0.0
+        hb = float(horizontal[7::8, :].mean()) if horizontal.shape[0] > 8 else 0.0
+        va = float(vertical.mean()) + 1e-6
+        ha = float(horizontal.mean()) + 1e-6
+        return float(np.clip((((vb / va) + (hb / ha)) / 2.0 - 0.88) * 120.0, 0, 100))
 
     @staticmethod
-    def _screenshot_likelihood(image: np.ndarray) -> bool:
+    def _ui_scores(image: np.ndarray) -> tuple[float, float]:
         h, w = image.shape[:2]
         gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-        portrait_phone = h / max(w, 1) > 1.55
-        top = gray[: max(28, int(h * 0.10))]
-        bottom = gray[int(h * 0.84):]
-        edge_density = float(cv2.Canny(top, 70, 150).mean())
-        flat_bottom = float(bottom.std()) < 48
-        light_or_dark_bar = float(bottom.mean()) > 145 or float(bottom.mean()) < 70
-        return bool(portrait_phone and edge_density > 5.5 and flat_bottom and light_or_dark_bar)
+        edges = cv2.Canny(gray, 70, 150)
+        top = edges[: max(30, int(h * 0.12))]
+        bottom_gray = gray[int(h * 0.80):]
+        bottom_edges = edges[int(h * 0.80):]
+        text_edge = float(np.mean(edges > 0) * 100.0)
+        top_density = float(np.mean(top > 0) * 100.0)
+        bottom_density = float(np.mean(bottom_edges > 0) * 100.0)
+        flat_bar = max(0.0, 18.0 - float(bottom_gray.std()))
+        portrait_bonus = 18.0 if h / max(w, 1) > 1.5 else 0.0
+        social = np.clip(top_density * 1.6 + bottom_density * 1.2 + flat_bar + portrait_bonus, 0, 100)
+        return text_edge, float(social)
 
     def inspect(self, image: np.ndarray) -> Inspection:
         h, w = image.shape[:2]
         gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
         hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
-        saturation = hsv[:, :, 1]
-        is_monochrome = float(np.percentile(saturation, 90)) < 18
-        is_screenshot = self._screenshot_likelihood(image)
+        is_monochrome = float(np.percentile(hsv[:, :, 1], 90)) < 18
+        text_edge, social_ui = self._ui_scores(image)
+        is_screenshot = social_ui >= 38 or (
+            h / max(w, 1) > 1.6 and text_edge > 8.0 and not bool(self._read_exif_hint(image))
+        )
         is_low_resolution = min(h, w) < 1000 or h * w < 1_500_000
         blur = float(cv2.Laplacian(gray, cv2.CV_64F).var())
         residual = gray.astype(np.float32) - cv2.GaussianBlur(gray, (3, 3), 0).astype(np.float32)
@@ -106,29 +127,29 @@ class PhotoPerfectEngine:
         dark = float(np.mean(gray < 35))
         highlights = float(np.mean(gray > 248))
         contrast = float(gray.std())
-        minimum = max(28, min(h, w) // 20)
+        minimum = max(28, min(h, w) // 22)
         faces = self.face_detector.detectMultiScale(gray, 1.1, 5, minSize=(minimum, minimum))
-        face_ratios = [(fw * fh) / float(h * w) for _, _, fw, fh in faces]
-        smallest_face = min(face_ratios) if face_ratios else 0.0
+        ratios = [(fw * fh) / float(h * w) for _, _, fw, fh in faces]
+        smallest_face = min(ratios) if ratios else 0.0
 
         problems: list[str] = []
         if is_screenshot:
             problems.append('social-media or phone screenshot interface')
         if is_low_resolution:
             problems.append('low resolution')
-        if compression > 16:
+        if compression > 12:
             problems.append('JPEG compression artefacts')
-        if blur < 80:
+        if blur < 120:
             problems.append('soft focus or blur')
         if noise > 8.5:
             problems.append('visible noise')
-        if dark > 0.18:
+        if dark > 0.14:
             problems.append('deep shadows')
-        if highlights > 0.07:
+        if highlights > 0.05:
             problems.append('clipped highlights')
-        if contrast < 34:
+        if contrast < 36:
             problems.append('low contrast')
-        if faces and smallest_face < 0.012:
+        if faces and smallest_face < 0.015:
             problems.append('small face detail')
         if is_monochrome:
             problems.append('black and white / monochrome image')
@@ -139,7 +160,7 @@ class PhotoPerfectEngine:
             image_type = 'Black & White Restore'
         elif len(faces) > 0:
             image_type = 'Portrait / People'
-        elif dark > 0.18:
+        elif dark > 0.16:
             image_type = 'Low Light'
         else:
             image_type = 'General Photograph'
@@ -158,8 +179,15 @@ class PhotoPerfectEngine:
             dark_fraction=dark,
             highlight_fraction=highlights,
             contrast=contrast,
+            text_edge_score=text_edge,
+            social_ui_score=social_ui,
             problems=problems,
         )
+
+    @staticmethod
+    def _read_exif_hint(_image: np.ndarray) -> bool:
+        # Pixel-only engine has no EXIF object. Kept as an explicit extension point.
+        return False
 
     def plan(self, inspection: Inspection, requested_mode: str) -> RepairPlan:
         mode = requested_mode or 'Auto Detect'
@@ -168,7 +196,7 @@ class PhotoPerfectEngine:
                 name = 'Screenshot Recovery'
             elif inspection.is_monochrome:
                 name = 'Black & White Restore'
-            elif inspection.quality_score >= 78:
+            elif inspection.quality_score >= 80:
                 name = 'Professional Light Polish'
             elif inspection.face_count:
                 name = 'Identity-Safe Portrait Recovery'
@@ -180,113 +208,141 @@ class PhotoPerfectEngine:
         stages: list[str] = []
         if inspection.is_screenshot:
             stages += ['crop screenshot interface', 'repair JPEG compression']
-        elif inspection.compression_score > 16:
+        elif inspection.compression_score > 12:
             stages.append('repair JPEG compression')
         if inspection.noise_score > 8.5:
             stages.append('adaptive denoise')
-        if inspection.blur_score < 140:
+        if inspection.blur_score < 160:
             stages.append('edge-limited detail recovery')
         if inspection.is_monochrome:
             stages += ['restore monochrome contrast', 'recover local tonal detail']
-        if inspection.dark_fraction > 0.10:
+        if inspection.dark_fraction > 0.08:
             stages.append('recover shadows')
-        if inspection.highlight_fraction > 0.04:
+        if inspection.highlight_fraction > 0.03:
             stages.append('compress highlights')
         if inspection.face_count:
             stages.append('identity-safe face lighting')
-        stages += ['professional colour and lighting', 'quality validation']
-        confidence = int(np.clip(60 + len(inspection.problems) * 5, 60, 96))
+        stages += ['professional colour and lighting', 'quality validation with retry']
+        confidence = int(np.clip(62 + len(inspection.problems) * 5, 62, 97))
         return RepairPlan(name, stages, mode, confidence, inspection)
 
     @staticmethod
-    def _crop_screenshot(image: np.ndarray) -> np.ndarray:
+    def _crop_screenshot(image: np.ndarray, strategy: str) -> np.ndarray:
         h, w = image.shape[:2]
-        # Conservative crop removes common top status/header and bottom action bars.
-        top = int(h * 0.055)
-        bottom = int(h * 0.84)
-        if bottom - top < h * 0.65:
-            return image
-        return image[top:bottom, 0:w]
+        if strategy == 'strong':
+            top, bottom = int(h * 0.075), int(h * 0.82)
+        else:
+            top, bottom = int(h * 0.05), int(h * 0.86)
+        return image[top:bottom, 0:w] if bottom - top >= h * 0.64 else image
 
     @staticmethod
-    def _repair_compression(image: np.ndarray, strong: bool) -> np.ndarray:
-        diameter, sigma = (7, 30) if strong else (5, 22)
+    def _repair_compression(image: np.ndarray, strategy: str) -> np.ndarray:
+        settings = {'gentle': (5, 18, 0.14), 'balanced': (7, 26, 0.22), 'strong': (9, 34, 0.28)}
+        diameter, sigma, amount = settings[strategy]
         cleaned = cv2.bilateralFilter(image, diameter, sigma, sigma)
-        # Recover edges after deblocking without restoring block boundaries.
         soft = cv2.GaussianBlur(cleaned, (0, 0), 0.9)
-        return cv2.addWeighted(cleaned, 1.22, soft, -0.22, 0)
+        return cv2.addWeighted(cleaned, 1 + amount, soft, -amount, 0)
 
     @staticmethod
-    def _restore_monochrome(image: np.ndarray) -> np.ndarray:
+    def _restore_monochrome(image: np.ndarray, strategy: str) -> np.ndarray:
         gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-        denoised = cv2.fastNlMeansDenoising(gray, None, 4, 7, 21)
-        clahe = cv2.createCLAHE(clipLimit=1.75, tileGridSize=(8, 8)).apply(denoised)
-        # Blend global and local tone to avoid the harsh processed result seen before.
-        toned = cv2.addWeighted(denoised, 0.28, clahe, 0.72, 0)
-        detail = cv2.addWeighted(toned, 1.34, cv2.GaussianBlur(toned, (0, 0), 1.15), -0.34, 0)
+        h = {'gentle': 2, 'balanced': 4, 'strong': 6}[strategy]
+        clip = {'gentle': 1.25, 'balanced': 1.65, 'strong': 2.0}[strategy]
+        detail_amount = {'gentle': 0.18, 'balanced': 0.30, 'strong': 0.42}[strategy]
+        denoised = cv2.fastNlMeansDenoising(gray, None, h, 7, 21)
+        local = cv2.createCLAHE(clipLimit=clip, tileGridSize=(8, 8)).apply(denoised)
+        toned = cv2.addWeighted(denoised, 0.30, local, 0.70, 0)
+        blurred = cv2.GaussianBlur(toned, (0, 0), 1.1)
+        detail = cv2.addWeighted(toned, 1 + detail_amount, blurred, -detail_amount, 0)
         return cv2.cvtColor(detail, cv2.COLOR_GRAY2BGR)
 
     @staticmethod
-    def _recover_lighting(image: np.ndarray, inspection: Inspection) -> np.ndarray:
+    def _recover_lighting(image: np.ndarray, inspection: Inspection, strategy: str) -> np.ndarray:
         lab = cv2.cvtColor(image, cv2.COLOR_BGR2LAB)
         l, a, b = cv2.split(lab)
-        local = cv2.createCLAHE(clipLimit=1.45, tileGridSize=(8, 8)).apply(l)
-        if inspection.dark_fraction > 0.10:
-            gamma = 0.88
+        clip = {'gentle': 1.18, 'balanced': 1.42, 'strong': 1.70}[strategy]
+        local = cv2.createCLAHE(clipLimit=clip, tileGridSize=(8, 8)).apply(l)
+        if inspection.dark_fraction > 0.08:
+            gamma = {'gentle': 0.95, 'balanced': 0.89, 'strong': 0.83}[strategy]
+            amount = {'gentle': 0.22, 'balanced': 0.42, 'strong': 0.58}[strategy]
             lut = np.array([((i / 255.0) ** gamma) * 255 for i in range(256)]).astype(np.uint8)
             lifted = cv2.LUT(local, lut)
             shadow = cv2.GaussianBlur((255 - l).astype(np.uint8), (0, 0), 17).astype(np.float32) / 255.0
-            local = np.clip(local * (1 - shadow * 0.48) + lifted * shadow * 0.48, 0, 255).astype(np.uint8)
-        if inspection.highlight_fraction > 0.04:
+            local = np.clip(local * (1 - shadow * amount) + lifted * shadow * amount, 0, 255).astype(np.uint8)
+        if inspection.highlight_fraction > 0.03:
+            amount = {'gentle': 8, 'balanced': 15, 'strong': 22}[strategy]
             high = np.clip((local.astype(np.float32) - 188) / 67, 0, 1)
-            local = np.clip(local.astype(np.float32) - high * 16, 0, 255).astype(np.uint8)
+            local = np.clip(local.astype(np.float32) - high * amount, 0, 255).astype(np.uint8)
         return cv2.cvtColor(cv2.merge([local, a, b]), cv2.COLOR_LAB2BGR)
 
     @staticmethod
-    def _professional_finish(image: np.ndarray, light: bool) -> np.ndarray:
-        lab = cv2.cvtColor(image, cv2.COLOR_BGR2LAB)
-        l, a, b = cv2.split(lab)
+    def _professional_finish(image: np.ndarray, strategy: str, monochrome: bool) -> np.ndarray:
+        if monochrome:
+            return image
         mean = np.array(cv2.mean(image)[:3], dtype=np.float32)
         target = mean.mean()
-        shift = 0.07 if light else 0.13
+        shift = {'gentle': 0.06, 'balanced': 0.10, 'strong': 0.14}[strategy]
         scales = np.clip(target / np.maximum(mean, 1.0), 1 - shift, 1 + shift)
         balanced = np.clip(image.astype(np.float32) * scales.reshape(1, 1, 3), 0, 255).astype(np.uint8)
         hsv = cv2.cvtColor(balanced, cv2.COLOR_BGR2HSV)
         h, s, v = cv2.split(hsv)
-        s = np.clip(s.astype(np.float32) * (1.035 if light else 1.075), 0, 255).astype(np.uint8)
+        saturation = {'gentle': 1.035, 'balanced': 1.065, 'strong': 1.09}[strategy]
+        s = np.clip(s.astype(np.float32) * saturation, 0, 255).astype(np.uint8)
         finished = cv2.cvtColor(cv2.merge([h, s, v]), cv2.COLOR_HSV2BGR)
-        return cv2.addWeighted(image, 0.18 if not light else 0.34, finished, 0.82 if not light else 0.66, 0)
+        blend = {'gentle': 0.62, 'balanced': 0.78, 'strong': 0.88}[strategy]
+        return cv2.addWeighted(image, 1 - blend, finished, blend, 0)
+
+    def _execute_strategy(self, image: np.ndarray, plan: RepairPlan, strategy: str) -> np.ndarray:
+        inspection = plan.inspection
+        working = image.copy()
+        if inspection.is_screenshot:
+            working = self._crop_screenshot(working, strategy)
+        if inspection.compression_score > 8 or inspection.is_screenshot:
+            working = self._repair_compression(working, strategy)
+        if inspection.is_monochrome:
+            working = self._restore_monochrome(working, strategy)
+        else:
+            if inspection.noise_score > 8.5 and strategy != 'gentle':
+                h = 3 if strategy == 'balanced' else 5
+                working = cv2.fastNlMeansDenoisingColored(working, None, h, h, 7, 21)
+            if inspection.blur_score < 180:
+                amount = {'gentle': 0.22, 'balanced': 0.42, 'strong': 0.60}[strategy]
+                base = cv2.GaussianBlur(working, (0, 0), 1.3)
+                working = cv2.addWeighted(working, 1 + amount, base, -amount, 0)
+            working = self._recover_lighting(working, inspection, strategy)
+            working = self._professional_finish(working, strategy, monochrome=False)
+        return working
 
     def execute(self, image: np.ndarray, plan: RepairPlan) -> tuple[np.ndarray, Validation]:
         before = self._quality(image)
-        working = image.copy()
-        inspection = plan.inspection
-        light = plan.name == 'Professional Light Polish'
-
-        if inspection.is_screenshot:
-            working = self._crop_screenshot(working)
-        if inspection.compression_score > 10 or inspection.is_screenshot:
-            working = self._repair_compression(working, strong=inspection.is_screenshot)
-        if inspection.is_monochrome:
-            working = self._restore_monochrome(working)
-        else:
-            if inspection.noise_score > 8.5 and not light:
-                working = cv2.fastNlMeansDenoisingColored(working, None, 4, 4, 7, 21)
-            if inspection.blur_score < 140 and not light:
-                base = cv2.GaussianBlur(working, (0, 0), 1.35)
-                working = cv2.addWeighted(working, 1.48, base, -0.48, 0)
-            working = self._recover_lighting(working, inspection)
-            working = self._professional_finish(working, light=light)
-
-        after = self._quality(working)
-        # The generic score can undervalue deliberate screenshot cropping; permit a small
-        # score drop there, but reject clear degradation for ordinary photographs.
-        tolerance = 4.0 if inspection.is_screenshot else 1.5
+        strategies = ['gentle', 'balanced', 'strong']
+        if plan.name == 'Professional Light Polish':
+            strategies = ['gentle', 'balanced']
+        candidates: list[tuple[float, str, np.ndarray]] = []
+        for strategy in strategies:
+            candidate = self._execute_strategy(image, plan, strategy)
+            score = self._quality(candidate)
+            candidates.append((score, strategy, candidate))
+        after, selected, result = max(candidates, key=lambda item: item[0])
+        tolerance = 4.0 if plan.inspection.is_screenshot else 1.5
         accepted = after + tolerance >= before
+        reasons = [
+            f'{strategy}: {score:.1f}' for score, strategy, _ in candidates
+        ]
         if not accepted:
-            working = image.copy()
+            result = image.copy()
             after = before
-        return working, Validation(before, after, accepted, after - before)
+            reasons.append('All candidate pipelines were rejected; original retained')
+        plan.strategy = selected
+        return result, Validation(
+            before_score=before,
+            after_score=after,
+            accepted=accepted,
+            improvement=after - before,
+            attempts=len(candidates),
+            selected_strategy=selected,
+            reasons=reasons,
+        )
 
     def process(self, image: np.ndarray, requested_mode: str) -> tuple[np.ndarray, RepairPlan, Validation]:
         inspection = self.inspect(image)
