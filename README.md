@@ -1,6 +1,6 @@
 # PhotoPerfect Studio
 
-Professional AI photo enhancement and restoration for Windows 11.
+Professional photo enhancement and restoration for Windows 11.
 
 ## Simple input options
 
@@ -16,19 +16,71 @@ Original photographs are never overwritten. Finished copies are saved inside a `
 ## Enhancement modes
 
 - **Auto Detect** — recommended; analyses every photograph and chooses the safest processing plan automatically
-- **Auto Enhance** — lightly improves already-good photographs with better lighting, colour, contrast and natural sharpness
-- **Auto Restore** — stronger repair for faded, damaged, blurred, noisy or compressed photographs
-- **Family** — natural family-photo enhancement with protected faces
-- **Portrait** — professional portrait lighting and colour
-- **Celebrations** — consistent results for weddings, birthdays, christenings, parties and other occasions
-- **Landscape** — scenery, nature and travel photographs
-- **Low Light** — dark indoor, evening and night photographs
-- **Screenshot Recovery** — compressed shared images and obvious phone or social-media borders
-- **Advanced** — exposes the detailed processing controls
+- **Auto Enhance** — lightly improves already-good photographs
+- **Auto Restore** — stronger repair for faded, blurred, noisy or compressed photographs
+- **Family**
+- **Portrait**
+- **Celebrations**
+- **Landscape**
+- **Low Light**
+- **Screenshot Recovery**
+- **Advanced**
+
+## PhotoPerfect Engine Phase 2
+
+Auto Detect now performs a proper inspection before processing. It measures screenshot and social-media UI likelihood, monochrome content, resolution, face size, JPEG blocking, blur, noise, exposure, highlights and contrast.
+
+For each image it builds a dynamic repair plan, then tries multiple safe strategies:
+
+- Gentle
+- Balanced
+- Strong
+
+The engine scores every candidate and keeps the best accepted result. If every candidate scores worse, it keeps the original rather than silently saving a degraded image.
+
+Dedicated processing is included for:
+
+- Screenshot and social-media recovery
+- Black-and-white tonal restoration
+- Identity-safe portraits
+- Low-light photographs
+- Professional light polish for already-good images
 
 ## Face Identity Lock
 
 Face Identity Lock is enabled by default. It preserves real facial features and expressions, avoids generative face replacement and prefers a less dramatic faithful result when stronger processing could alter somebody's appearance.
+
+## Versioned model packs
+
+Phase 2 adds a real model-pack system. Packs are separate from app releases and can be updated independently.
+
+A pack manifest records:
+
+- Pack ID and version
+- Minimum app version
+- Model capability names
+- File names and sizes
+- Supported execution providers
+- SHA-256 checksums
+- Archive download URL and checksum
+
+Installations are staged in a temporary folder, checksum verified and validated before replacing the current pack. A failed installation automatically retains or restores the previous working pack.
+
+The first pack template is:
+
+`model_packs/essentials-manifest.template.json`
+
+Supported capability names currently include:
+
+- `jpeg_repair`
+- `deblur`
+- `denoise`
+- `super_resolution`
+- `face_protect`
+- `colour`
+- `inpaint`
+
+No unlicensed or fake neural weights are bundled. The built-in photographic engine remains usable when no optional model pack is installed.
 
 ## GPU editions
 
@@ -39,28 +91,9 @@ Every release provides two Windows builds:
 
 Both editions retain CPU fallback processing.
 
-## Current features
+## Quality gates
 
-- Automatic photo analysis and quality scoring
-- Per-photo processing decisions
-- Shadow and highlight recovery
-- White-balance and colour correction
-- Conservative lens-flare correction
-- Noise and compression cleanup
-- Intelligent sharpening
-- Screenshot-border detection
-- Horizon straightening
-- Original, 2× and 4K output
-- Duplicate and near-duplicate detection
-- Best-photo selection
-- Review folders and CSV reports
-- Before/after comparison
-- Manual repair brush for marks, flare, scratches, shadows and unwanted objects
-- Crop presets, undo and reset
-
-## Optional model packs
-
-The app works without external model files. The release ZIP includes a `models` folder reserved for versioned PhotoPerfect model packs. A future model manager will download, verify, install and update those packs automatically.
+GitHub Actions now runs source compilation and Phase 2 regression tests before either Windows executable is built. Tests cover screenshot routing, monochrome restoration, candidate pipeline retries and model-pack checksum validation.
 
 ## Download
 
@@ -68,4 +101,4 @@ Open the repository's **Releases** section and download the newest AMD DirectML 
 
 ## Important limitation
 
-No software can guarantee recovery of detail that was never captured or was completely destroyed. PhotoPerfect Studio uses conservative processing and review checks rather than silently inventing a different face.
+No software can guarantee recovery of detail that was never captured or was completely destroyed. PhotoPerfect Studio uses conservative processing, Face Identity Lock and quality validation rather than silently inventing a different face.
