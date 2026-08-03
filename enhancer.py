@@ -7,6 +7,8 @@ import cv2
 import numpy as np
 from PIL import Image, ImageOps
 
+from photo_analysis import PhotoAnalysis, PhotoAnalyser
+
 SUPPORTED = {'.jpg', '.jpeg', '.png', '.webp', '.bmp', '.tif', '.tiff'}
 
 
@@ -16,6 +18,7 @@ def supported_image(path: Path) -> bool:
 
 @dataclass
 class EnhanceOptions:
+    preset: str = 'Smart Auto'
     strength: str = 'natural'
     upscale: str = 'Original size'
     lift_shadows: bool = True
@@ -25,20 +28,21 @@ class EnhanceOptions:
     sharpen: bool = True
     face_aware: bool = True
     auto_rotate: bool = True
+    straighten_horizon: bool = True
+    portrait_finish: bool = True
     jpeg_quality: int = 95
 
 
 @dataclass
 class ProcessResult:
     review_needed: bool
-    blur_score: float
-    clipped_highlights: float
-    dark_fraction: float
+    analysis: PhotoAnalysis
 
 
 class PhotoEnhancer:
     def __init__(self, options: EnhanceOptions):
         self.options = options
+        self.analyser = PhotoAnalyser()
         self.face_detector = cv2.CascadeClassifier(
             cv2.data.haarcascades + 'haarcascade_frontalface_default.xml'
         )
@@ -58,88 +62,135 @@ class PhotoEnhancer:
         scales = np.clip(target / np.maximum(means, 1.0), 0.85, 1.18)
         return np.clip(work * scales.reshape(1, 1, 3), 0, 255).astype(np.uint8)
 
-    def _tone(self, image: np.ndarray) -> np.ndarray:
+    def _effective_strength(self, analysis: PhotoAnalysis) -> str:
+        if self.options.preset != 'Smart Auto':
+            return self.options.strength
+        if analysis.quality_score < 48:
+            return 'maximum'
+        if analysis.quality_score < 72:
+            return 'strong'
+        return 'natural'
+
+    def _tone(self, image: np.ndarray, strength: str) -> np.ndarray:
         lab = cv2.cvtColor(image, cv2.COLOR_BGR2LAB)
         l, a, b = cv2.split(lab)
-        clip = {'natural': 1.4, 'strong': 1.8, 'maximum': 2.2}[self.options.strength]
+        clip = {'natural': 1.35, 'strong': 1.75, 'maximum': 2.1}[strength]
         l2 = cv2.createCLAHE(clipLimit=clip, tileGridSize=(8, 8)).apply(l)
 
         if self.options.lift_shadows:
-            gamma = {'natural': 0.94, 'strong': 0.88, 'maximum': 0.82}[self.options.strength]
+            gamma = {'natural': 0.95, 'strong': 0.89, 'maximum': 0.83}[strength]
             lut = np.array([((i / 255.0) ** gamma) * 255 for i in range(256)]).astype('uint8')
             lifted = cv2.LUT(l2, lut)
             mask = cv2.GaussianBlur((255 - l).astype(np.uint8), (0, 0), 15) / 255.0
-            amount = {'natural': 0.35, 'strong': 0.50, 'maximum': 0.65}[self.options.strength]
+            amount = {'natural': 0.32, 'strong': 0.48, 'maximum': 0.62}[strength]
             l2 = np.clip(l2 * (1 - mask * amount) + lifted * mask * amount, 0, 255).astype(np.uint8)
 
         if self.options.recover_highlights:
-            high = np.clip((l2.astype(np.float32) - 190) / 65, 0, 1)
-            compression = {'natural': 10, 'strong': 18, 'maximum': 26}[self.options.strength]
+            high = np.clip((l2.astype(np.float32) - 188) / 67, 0, 1)
+            compression = {'natural': 9, 'strong': 17, 'maximum': 25}[strength]
             l2 = np.clip(l2.astype(np.float32) - high * compression, 0, 255).astype(np.uint8)
 
         return cv2.cvtColor(cv2.merge([l2, a, b]), cv2.COLOR_LAB2BGR)
 
+    def _preset_grade(self, image: np.ndarray, analysis: PhotoAnalysis) -> np.ndarray:
+        preset = self.options.preset
+        if preset == 'Event / Christening':
+            lab = cv2.cvtColor(image, cv2.COLOR_BGR2LAB)
+            l, a, b = cv2.split(lab)
+            a = np.clip(a.astype(np.int16) + 1, 0, 255).astype(np.uint8)
+            b = np.clip(b.astype(np.int16) + 2, 0, 255).astype(np.uint8)
+            image = cv2.cvtColor(cv2.merge([l, a, b]), cv2.COLOR_LAB2BGR)
+        elif preset == 'Old Photo Restoration':
+            image = cv2.detailEnhance(image, sigma_s=8, sigma_r=0.12)
+            image = cv2.bilateralFilter(image, 7, 25, 25)
+        elif preset == 'Landscape':
+            hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
+            h, s, v = cv2.split(hsv)
+            s = np.clip(s.astype(np.float32) * 1.06, 0, 255).astype(np.uint8)
+            image = cv2.cvtColor(cv2.merge([h, s, v]), cv2.COLOR_HSV2BGR)
+        elif preset == 'Night / Low Light':
+            image = cv2.fastNlMeansDenoisingColored(image, None, 7, 7, 7, 21)
+        return image
+
     def _reduce_flare(self, image: np.ndarray) -> np.ndarray:
         hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
         _, saturation, value = cv2.split(hsv)
-        mask = ((((value > 238) & (saturation < 70)) | ((value > 225) & (saturation > 95))).astype(np.uint8) * 255)
+        mask = ((((value > 240) & (saturation < 65)) | ((value > 228) & (saturation > 110))).astype(np.uint8) * 255)
         mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, np.ones((3, 3), np.uint8))
         count, labels, stats, _ = cv2.connectedComponentsWithStats(mask, 8)
         safe = np.zeros_like(mask)
         total = image.shape[0] * image.shape[1]
         for label in range(1, count):
             area = stats[label, cv2.CC_STAT_AREA]
-            if 12 <= area <= total * 0.012:
+            if 12 <= area <= total * 0.009:
                 safe[labels == label] = 255
-        if safe.mean() < 0.2:
+        if safe.mean() < 0.15:
             return image
         safe = cv2.dilate(safe, np.ones((5, 5), np.uint8), iterations=1)
         return cv2.inpaint(image, safe, 3, cv2.INPAINT_TELEA)
 
-    def _faces(self, image: np.ndarray) -> tuple[np.ndarray, int]:
+    def _faces(self, image: np.ndarray, strength: str) -> tuple[np.ndarray, int]:
         gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
         minimum = max(40, min(image.shape[:2]) // 14)
         faces = self.face_detector.detectMultiScale(gray, 1.12, 5, minSize=(minimum, minimum))
         result = image.copy()
         for x, y, w, h in faces:
-            pad = int(w * 0.12)
+            pad = int(w * 0.14)
             x0, y0 = max(0, x - pad), max(0, y - pad)
             x1, y1 = min(image.shape[1], x + w + pad), min(image.shape[0], y + h + pad)
             roi = result[y0:y1, x0:x1]
+            if roi.size == 0:
+                continue
             lab = cv2.cvtColor(roi, cv2.COLOR_BGR2LAB)
             l, a, b = cv2.split(lab)
             mean_l = float(l.mean())
-            if mean_l < 122:
-                gain = min(1.16, 122 / max(mean_l, 1))
+            target = {'natural': 120, 'strong': 124, 'maximum': 127}[strength]
+            if mean_l < target:
+                gain = min(1.18, target / max(mean_l, 1))
                 l = np.clip(l.astype(np.float32) * gain, 0, 255).astype(np.uint8)
             corrected = cv2.cvtColor(cv2.merge([l, a, b]), cv2.COLOR_LAB2BGR)
+            if self.options.portrait_finish:
+                smooth = cv2.bilateralFilter(corrected, 5, 18, 18)
+                corrected = cv2.addWeighted(corrected, 0.82, smooth, 0.18, 0)
             result[y0:y1, x0:x1] = cv2.addWeighted(roi, 0.35, corrected, 0.65, 0)
         return result, len(faces)
 
-    @staticmethod
-    def _blur_score(image: np.ndarray) -> float:
-        return float(cv2.Laplacian(cv2.cvtColor(image, cv2.COLOR_BGR2GRAY), cv2.CV_64F).var())
+    def _denoise(self, image: np.ndarray, strength: str, analysis: PhotoAnalysis) -> np.ndarray:
+        if analysis.noise_score < 4.2 and strength == 'natural':
+            return image
+        amount = {'natural': 3, 'strong': 5, 'maximum': 7}[strength]
+        return cv2.fastNlMeansDenoisingColored(image, None, amount, amount, 7, 21)
 
-    def _denoise(self, image: np.ndarray) -> np.ndarray:
-        h = {'natural': 3, 'strong': 5, 'maximum': 7}[self.options.strength]
-        return cv2.fastNlMeansDenoisingColored(image, None, h, h, 7, 21)
-
-    def _sharpen(self, image: np.ndarray, blur_score: float) -> np.ndarray:
+    def _sharpen(self, image: np.ndarray, analysis: PhotoAnalysis, strength: str) -> np.ndarray:
+        blur_score = analysis.blur_score
         if blur_score > 650:
-            amount = 0.20
+            amount = 0.16
         elif blur_score > 250:
-            amount = 0.38
+            amount = 0.32
         elif blur_score > 90:
-            amount = 0.58
+            amount = 0.52
         else:
-            amount = 0.80
-        amount *= {'natural': 0.8, 'strong': 1.0, 'maximum': 1.15}[self.options.strength]
-        blurred = cv2.GaussianBlur(image, (0, 0), 1.2)
+            amount = 0.72
+        amount *= {'natural': 0.82, 'strong': 1.0, 'maximum': 1.12}[strength]
+        blurred = cv2.GaussianBlur(image, (0, 0), 1.15)
         sharpened = cv2.addWeighted(image, 1 + amount, blurred, -amount, 0)
         gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
         edge = np.clip(np.abs(cv2.Laplacian(gray, cv2.CV_32F)) / 30.0, 0, 1)
-        edge = cv2.GaussianBlur(edge, (0, 0), 1.2)[..., None]
+        edge = cv2.GaussianBlur(edge, (0, 0), 1.15)[..., None]
         return np.clip(image * (1 - edge) + sharpened * edge, 0, 255).astype(np.uint8)
+
+    @staticmethod
+    def _straighten(image: np.ndarray, angle: float) -> np.ndarray:
+        if abs(angle) < 0.45 or abs(angle) > 8:
+            return image
+        height, width = image.shape[:2]
+        matrix = cv2.getRotationMatrix2D((width / 2, height / 2), angle, 1.0)
+        rotated = cv2.warpAffine(image, matrix, (width, height), flags=cv2.INTER_CUBIC,
+                                 borderMode=cv2.BORDER_REFLECT)
+        crop = int(min(width, height) * min(abs(angle) / 90, 0.035))
+        if crop > 0 and width > crop * 2 and height > crop * 2:
+            rotated = rotated[crop:height-crop, crop:width-crop]
+        return rotated
 
     def _upscale(self, image: np.ndarray) -> np.ndarray:
         h, w = image.shape[:2]
@@ -151,24 +202,23 @@ class PhotoEnhancer:
         return image
 
     def process(self, source: Path, destination: Path) -> ProcessResult:
+        analysis = self.analyser.analyse(source)
+        strength = self._effective_strength(analysis)
         image = self._read(source)
-        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-        blur = self._blur_score(image)
-        clipped = float(np.mean(gray > 250))
-        dark = float(np.mean(gray < 35))
-        image = self._tone(self._white_balance(image))
+        if self.options.straighten_horizon:
+            image = self._straighten(image, analysis.horizon_angle)
+        image = self._tone(self._white_balance(image), strength)
+        image = self._preset_grade(image, analysis)
         if self.options.reduce_flare:
             image = self._reduce_flare(image)
-        face_count = 0
         if self.options.face_aware:
-            image, face_count = self._faces(image)
+            image, _ = self._faces(image, strength)
         if self.options.denoise:
-            image = self._denoise(image)
+            image = self._denoise(image, strength, analysis)
         if self.options.sharpen:
-            image = self._sharpen(image, blur)
+            image = self._sharpen(image, analysis, strength)
         image = self._upscale(image)
         destination.parent.mkdir(parents=True, exist_ok=True)
         if not cv2.imwrite(str(destination), image, [cv2.IMWRITE_JPEG_QUALITY, self.options.jpeg_quality]):
             raise OSError(f'Could not write {destination}')
-        review = blur < 35 or clipped > 0.10 or dark > 0.30
-        return ProcessResult(review, blur, clipped, dark)
+        return ProcessResult(bool(analysis.review_reason), analysis)
