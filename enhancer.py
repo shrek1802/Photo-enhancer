@@ -7,8 +7,9 @@ import cv2
 import numpy as np
 from PIL import Image, ImageOps
 
-from ai_engine import NeuralEngine
+from ai_engine import NeuralEngine, app_directory
 from auto_ai_pipeline import PipelineReport
+from capability_runtime import CapabilityReport, PhotoPerfectCapabilityRuntime
 from identity_guard import FaceIdentityGuard
 from photo_analysis import PhotoAnalysis, PhotoAnalyser
 from photoperfect_engine import PhotoPerfectEngine, RepairPlan, Validation
@@ -50,15 +51,15 @@ class ProcessResult:
     faces_protected: int = 0
     repair_plan: RepairPlan | None = None
     validation: Validation | None = None
+    capability_report: CapabilityReport | None = None
 
 
 class PhotoEnhancer:
-    """Public enhancement facade used by the Studio UI.
+    """Public enhancement facade used by PhotoPerfect Studio.
 
-    Auto Detect is now routed through PhotoPerfectEngine, which inspects the
-    image, classifies it, builds a repair plan and validates the result before
-    optional neural upscaling. Identity Lock restores original face pixels after
-    non-geometric corrections so faces are never generated or structurally changed.
+    Phase 2 supplies inspection, planning and safe deterministic recovery.
+    Phase 3 optionally runs independently updateable ONNX capability models.
+    Missing or incompatible models never stop normal photo processing.
     """
 
     def __init__(self, options: EnhanceOptions):
@@ -66,12 +67,20 @@ class PhotoEnhancer:
         self.analyser = PhotoAnalyser()
         self.engine = PhotoPerfectEngine()
         self.neural = NeuralEngine(enabled=options.neural_ai)
+        self.capabilities = PhotoPerfectCapabilityRuntime(
+            models_root=app_directory() / 'models', enabled=options.neural_ai
+        )
         self.identity = FaceIdentityGuard()
 
     @property
     def engine_message(self) -> str:
         identity = 'Identity Lock ON' if self.options.identity_lock else 'Identity Lock OFF'
-        return f'PhotoPerfect Engine v2; {self.neural.status.message}; {identity}'
+        installed = self.capabilities.manager.installed_capabilities()
+        capability_text = f'{len(installed)} specialist model(s) installed'
+        return (
+            f'PhotoPerfect Engine v3; {self.neural.status.message}; '
+            f'{capability_text}; {identity}'
+        )
 
     def _read(self, path: Path) -> np.ndarray:
         image = Image.open(path)
@@ -146,13 +155,11 @@ class PhotoEnhancer:
     def _upscale(self, image: np.ndarray, plan: RepairPlan) -> np.ndarray:
         h, w = image.shape[:2]
         selected = self.options.upscale
-        # Screenshot Recovery and very small images need visible resolution recovery
-        # even when the user left output at Original size.
         auto_2x = (
             selected == 'Original size'
             and (plan.inspection.is_screenshot or min(h, w) < 720)
         )
-        if selected == '2× AI Upscale' or selected == '2× upscale' or auto_2x:
+        if selected in {'2× AI Upscale', '2× upscale'} or auto_2x:
             return self.neural.upscale(image)
         if selected in {'4K AI Upscale', '4K long edge'} and max(h, w) < 3840:
             if self.neural.status.model_loaded and max(h, w) * self.neural.scale <= 4608:
@@ -169,15 +176,19 @@ class PhotoEnhancer:
         analysis = self.analyser.analyse(source)
         original = self._read(source)
         mode = self._mode_name(self.options.preset)
-
-        # Detect faces before any crop or enhancement. Identity Lock is applied
-        # only when the processed image keeps the same geometry.
         original_faces = self.identity.detect(original)
 
         processed, plan, validation = self.engine.process(original, mode)
 
-        # Respect explicit feature switches in Advanced mode. Auto Detect normally
-        # leaves these decisions to the engine.
+        # Apply installed specialist models requested by the Phase 2 plan. Super
+        # resolution remains in _upscale so output dimensions stay user-controlled.
+        processed, capability_report = self.capabilities.apply(
+            processed,
+            plan.inspection,
+            plan,
+            allow_super_resolution=False,
+        )
+
         if self.options.reduce_flare and not plan.inspection.is_monochrome:
             processed = self._safe_flare_cleanup(processed)
 
@@ -214,6 +225,8 @@ class PhotoEnhancer:
             review = True
         if self.options.identity_lock and faces_protected and minimum_similarity < 0.72:
             review = True
+        if any(step.available and not step.applied for step in capability_report.steps):
+            review = True
 
         return ProcessResult(
             review_needed=review,
@@ -221,4 +234,5 @@ class PhotoEnhancer:
             faces_protected=faces_protected,
             repair_plan=plan,
             validation=validation,
+            capability_report=capability_report,
         )
