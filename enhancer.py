@@ -13,6 +13,9 @@ from capability_runtime import CapabilityReport, PhotoPerfectCapabilityRuntime
 from identity_guard import FaceIdentityGuard
 from photo_analysis import PhotoAnalysis, PhotoAnalyser
 from photoperfect_engine import PhotoPerfectEngine, RepairPlan, Validation
+from photoperfect_intelligence import (
+    IntelligenceReport, PhotoPerfectIntelligence, PostProcessValidation,
+)
 
 SUPPORTED = {'.jpg', '.jpeg', '.png', '.webp', '.bmp', '.tif', '.tiff'}
 
@@ -26,6 +29,7 @@ class EnhanceOptions:
     preset: str = 'Auto Detect'
     strength: str = 'natural'
     upscale: str = 'Original size'
+    quality_target: str = 'Professional'
     lift_shadows: bool = True
     recover_highlights: bool = True
     reduce_flare: bool = True
@@ -52,6 +56,8 @@ class ProcessResult:
     repair_plan: RepairPlan | None = None
     validation: Validation | None = None
     capability_report: CapabilityReport | None = None
+    intelligence_report: IntelligenceReport | None = None
+    post_validation: PostProcessValidation | None = None
 
 
 class PhotoEnhancer:
@@ -59,6 +65,7 @@ class PhotoEnhancer:
 
     Phase 2 supplies inspection, planning and safe deterministic recovery.
     Phase 3 optionally runs independently updateable ONNX capability models.
+    Phase 4 adds richer image/face inspection and post-processing safety gates.
     Missing or incompatible models never stop normal photo processing.
     """
 
@@ -66,6 +73,7 @@ class PhotoEnhancer:
         self.options = options
         self.analyser = PhotoAnalyser()
         self.engine = PhotoPerfectEngine()
+        self.intelligence = PhotoPerfectIntelligence()
         self.neural = NeuralEngine(enabled=options.neural_ai)
         self.capabilities = PhotoPerfectCapabilityRuntime(
             models_root=app_directory() / 'models', enabled=options.neural_ai
@@ -78,8 +86,8 @@ class PhotoEnhancer:
         installed = self.capabilities.manager.installed_capabilities()
         capability_text = f'{len(installed)} specialist model(s) installed'
         return (
-            f'PhotoPerfect Engine v3; {self.neural.status.message}; '
-            f'{capability_text}; {identity}'
+            f'PhotoPerfect Engine v4; {self.neural.status.message}; '
+            f'{capability_text}; target {self.options.quality_target}; {identity}'
         )
 
     def _read(self, path: Path) -> np.ndarray:
@@ -177,11 +185,12 @@ class PhotoEnhancer:
         original = self._read(source)
         mode = self._mode_name(self.options.preset)
         original_faces = self.identity.detect(original)
+        intelligence_report = self.intelligence.inspect(
+            original, scene=analysis.scene, quality_target=self.options.quality_target
+        )
 
         processed, plan, validation = self.engine.process(original, mode)
 
-        # Apply installed specialist models requested by the Phase 2 plan. Super
-        # resolution remains in _upscale so output dimensions stay user-controlled.
         processed, capability_report = self.capabilities.apply(
             processed,
             plan.inspection,
@@ -209,6 +218,12 @@ class PhotoEnhancer:
             faces_protected = locked.faces_protected
             minimum_similarity = locked.minimum_similarity
 
+        post_validation = self.intelligence.validate(original, processed, intelligence_report)
+        if not post_validation.accepted and processed.shape == original.shape:
+            # Phase 4 safety gate: keep the original when identity, structure,
+            # clipping or sharpening checks say the candidate is unsafe.
+            processed = original.copy()
+
         processed = self._upscale(processed, plan)
 
         destination.parent.mkdir(parents=True, exist_ok=True)
@@ -219,14 +234,16 @@ class PhotoEnhancer:
             raise OSError(f'Could not write {destination}')
 
         review = bool(analysis.review_reason)
-        if not validation.accepted:
+        if not validation.accepted or not post_validation.accepted:
             review = True
-        if plan.inspection.quality_score < 38:
+        if plan.inspection.quality_score < 38 or intelligence_report.quality_score < 38:
             review = True
         if self.options.identity_lock and faces_protected and minimum_similarity < 0.72:
             review = True
         if any(step.available and not step.applied for step in capability_report.steps):
             review = True
+        if intelligence_report.warnings:
+            review = review or self.options.quality_target in {'Archive', 'Museum'}
 
         return ProcessResult(
             review_needed=review,
@@ -235,4 +252,6 @@ class PhotoEnhancer:
             repair_plan=plan,
             validation=validation,
             capability_report=capability_report,
+            intelligence_report=intelligence_report,
+            post_validation=post_validation,
         )
