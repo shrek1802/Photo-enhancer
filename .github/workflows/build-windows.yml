@@ -41,6 +41,12 @@ jobs:
           pip install -r requirements.txt
           pip install "${{ matrix.runtime }}"
 
+      - name: Validate source and PhotoPerfect Engine
+        shell: pwsh
+        run: |
+          python -m py_compile app.py enhancer.py photoperfect_engine.py auto_ai_pipeline.py identity_guard.py photo_analysis.py repair_editor.py
+          python -m unittest discover -s tests -p "test_*.py" -v
+
       - name: Build standalone EXE
         shell: pwsh
         run: |
@@ -74,17 +80,19 @@ jobs:
         if: github.event_name != 'pull_request'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: studio-v1.0.${{ github.run_number }}
-          name: PhotoPerfect Studio v1.0.${{ github.run_number }}
+          tag_name: studio-v2.0.${{ github.run_number }}
+          name: PhotoPerfect Studio v2.0.${{ github.run_number }}
           body: |
-            PhotoPerfect Studio for Windows 11.
+            PhotoPerfect Studio with PhotoPerfect Engine v2.
 
-            New interface:
-            - Select one photo, multiple photos, or a complete folder
-            - Drag and drop support
-            - Auto Detect, Auto Enhance and Auto Restore modes
-            - Face Identity Lock enabled by default
-            - Professional named modes and simplified controls
+            Engine improvements:
+            - Auto Detect now inspects and classifies every image first
+            - Dedicated Screenshot Recovery and Black & White Restore plans
+            - JPEG artefact, blur, noise, exposure and low-resolution detection
+            - Per-image repair plans instead of one generic filter chain
+            - Before/after quality validation with rejection of degraded results
+            - Identity Lock remains enabled by default
+            - Automatic 2x recovery for screenshots and very small images
 
             Choose AMD DirectML for Radeon cards including RX 6900 XT.
             Choose NVIDIA CUDA for GeForce cards including RTX 2060.
