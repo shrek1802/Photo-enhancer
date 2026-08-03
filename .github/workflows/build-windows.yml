@@ -1,4 +1,4 @@
-name: Build Windows GPU EXEs
+name: Build PhotoPerfect Studio for Windows
 
 on:
   workflow_dispatch:
@@ -19,10 +19,10 @@ jobs:
         include:
           - edition: AMD-DirectML
             runtime: onnxruntime-directml==1.20.1
-            exe_name: PhotoPerfect-Batch-AI-AMD-DirectML
+            exe_name: PhotoPerfect-Studio-AMD-DirectML
           - edition: NVIDIA-CUDA
             runtime: onnxruntime-gpu==1.20.2
-            exe_name: PhotoPerfect-Batch-AI-NVIDIA-CUDA
+            exe_name: PhotoPerfect-Studio-NVIDIA-CUDA
 
     steps:
       - name: Checkout repository
@@ -58,7 +58,7 @@ jobs:
           New-Item -ItemType Directory -Force -Path package/models | Out-Null
           Copy-Item "dist/${{ matrix.exe_name }}.exe" "package/${{ matrix.exe_name }}.exe"
           Copy-Item README.md "package/README.txt"
-          Set-Content -Path "package/models/PUT_AI_MODEL_HERE.txt" -Value "Place super_resolution_x2.onnx in this folder to enable neural 2x upscaling. Without it the app uses its safe photographic fallback."
+          Set-Content -Path "package/models/MODEL_PACK_INFO.txt" -Value "PhotoPerfect Studio runs without optional models. Future versioned PhotoPerfect model packs will install into this folder automatically."
           Compress-Archive -Path "package/*" -DestinationPath "${{ matrix.exe_name }}-Windows.zip" -Force
 
       - name: Upload build artifact
@@ -74,10 +74,17 @@ jobs:
         if: github.event_name != 'pull_request'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v0.4.${{ github.run_number }}
-          name: PhotoPerfect Batch AI v0.4.${{ github.run_number }}
+          tag_name: studio-v1.0.${{ github.run_number }}
+          name: PhotoPerfect Studio v1.0.${{ github.run_number }}
           body: |
-            Automatic Windows 11 GPU build.
+            PhotoPerfect Studio for Windows 11.
+
+            New interface:
+            - Select one photo, multiple photos, or a complete folder
+            - Drag and drop support
+            - Auto Detect, Auto Enhance and Auto Restore modes
+            - Face Identity Lock enabled by default
+            - Professional named modes and simplified controls
 
             Choose AMD DirectML for Radeon cards including RX 6900 XT.
             Choose NVIDIA CUDA for GeForce cards including RTX 2060.
