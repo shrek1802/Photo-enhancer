@@ -6,10 +6,11 @@ on:
       pack:
         description: Model pack to build
         required: true
-        default: auto-essentials-lite
+        default: auto-restoration-core
         type: choice
         options:
           - auto-essentials-lite
+          - auto-restoration-core
           - auto-portrait-pro
           - auto-heritage
           - auto-social-recovery
@@ -46,17 +47,11 @@ jobs:
         run: |
           python - <<'PY'
           import json, os
-          from pathlib import Path
-
           selected = os.environ['SELECTED_PACK']
           catalog = json.load(open('model_packs/catalog.json', encoding='utf-8'))
           pack = next((item for item in catalog['packs'] if item['pack_id'] == selected), None)
           if pack is None:
               raise SystemExit(f'Unknown pack: {selected}')
-          profiles = json.load(open('model_packs/profiles.json', encoding='utf-8'))['packs']
-          profile = profiles.get(selected)
-          if selected != 'auto-essentials-lite' and profile is None:
-              raise SystemExit(f'Missing processing profile for {selected}')
           display = pack['name']
           version = pack.get('version', '1.0.0')
           filename = display.replace('&', 'and').replace(' ', '-') + f'-{version}.zip'
@@ -66,20 +61,22 @@ jobs:
               out.write(f'version={version}\n')
               out.write(f'filename={filename}\n')
               out.write(f'tag=auto-pack-{selected}-v{version}\n')
-          print(f'Selected: {display} {version}')
-          print('Pack type:', 'neural model pack' if selected == 'auto-essentials-lite' else 'installable processing-profile pack')
+          print(f'Selected: {display} {version} ({pack.get("status", "unknown")})')
           PY
 
-      - name: Install ONNX validation tools
-        if: inputs.pack == 'auto-essentials-lite'
+      - name: Install validation tools
+        if: inputs.pack == 'auto-essentials-lite' || inputs.pack == 'auto-restoration-core'
         run: python -m pip install --upgrade onnx onnxruntime
 
-      - name: Build Auto Essentials Lite neural pack
-        if: inputs.pack == 'auto-essentials-lite'
+      - name: Build verified neural base
+        if: inputs.pack == 'auto-essentials-lite' || inputs.pack == 'auto-restoration-core'
         shell: bash
+        env:
+          PACK_ID: ${{ steps.metadata.outputs.pack_id }}
+          PACK_NAME: ${{ steps.metadata.outputs.name }}
+          PACK_VERSION: ${{ steps.metadata.outputs.version }}
         run: |
           set -euo pipefail
-          PACK_ID=auto-essentials-lite
           ROOT="dist-packs/${PACK_ID}"
           mkdir -p "$ROOT/models"
 
@@ -90,9 +87,8 @@ jobs:
           echo "85f36ff88cc504a24af5e0602148bc56a8aa09a58eca8c0da2756f3e8186035e  $ROOT/models/super_resolution.onnx" | sha256sum --check
 
           python - <<'PY'
-          import onnx
-          import onnxruntime as ort
-          path = 'dist-packs/auto-essentials-lite/models/super_resolution.onnx'
+          import os, onnx, onnxruntime as ort
+          path = f"dist-packs/{os.environ['PACK_ID']}/models/super_resolution.onnx"
           onnx.checker.check_model(onnx.load(path))
           session = ort.InferenceSession(path, providers=['CPUExecutionProvider'])
           assert session.get_inputs() and session.get_outputs()
@@ -100,14 +96,51 @@ jobs:
           PY
 
           SIZE=$(stat -c%s "$ROOT/models/super_resolution.onnx")
+          cat > "$ROOT/models/super_resolution.model.json" <<'EOF'
+          {
+            "schema_version": 1,
+            "capability": "super_resolution",
+            "colour_order": "rgb",
+            "input_range": "0_1",
+            "output_range": "0_1",
+            "layout": "nchw",
+            "tile_size": 224,
+            "tile_overlap": 24,
+            "blend_strength": 1.0,
+            "output_scale": 3
+          }
+          EOF
+
+          if [ "$PACK_ID" = "auto-restoration-core" ]; then
+            cat > "$ROOT/profile.json" <<'EOF'
+          {
+            "schema_version": 1,
+            "pack_id": "auto-restoration-core",
+            "name": "Auto Restoration Core",
+            "version": "1.0.0",
+            "pack_type": "hybrid-core",
+            "scene_hints": ["photo", "portrait", "family", "social", "night", "old", "screenshot"],
+            "capabilities": ["jpeg_repair", "denoise", "deblur", "super_resolution"],
+            "neural_capabilities": ["super_resolution"],
+            "settings": {
+              "denoise": 0.34,
+              "detail_recovery": 0.25,
+              "jpeg_repair": 0.30,
+              "highlight_protection": 0.30,
+              "shadow_recovery": 0.24
+            }
+          }
+          EOF
+          fi
+
           cat > "$ROOT/manifest.json" <<EOF
           {
             "schema_version": 1,
-            "pack_id": "auto-essentials-lite",
-            "name": "Auto Essentials Lite",
-            "version": "1.0.0",
+            "pack_id": "$PACK_ID",
+            "name": "$PACK_NAME",
+            "version": "$PACK_VERSION",
             "minimum_app_version": "2.3.0",
-            "archive_url": "https://github.com/${{ github.repository }}/releases/download/auto-pack-auto-essentials-lite-v1.0.0/Auto-Essentials-Lite-1.0.0.zip",
+            "archive_url": "",
             "archive_sha256": "",
             "files": [
               {
@@ -116,23 +149,25 @@ jobs:
                 "sha256": "85f36ff88cc504a24af5e0602148bc56a8aa09a58eca8c0da2756f3e8186035e",
                 "size": $SIZE,
                 "providers": ["CUDAExecutionProvider", "DmlExecutionProvider", "CPUExecutionProvider"],
-                "required": true
+                "required": true,
+                "metadata": "models/super_resolution.model.json"
               }
             ]
           }
           EOF
 
           cat > "$ROOT/THIRD-PARTY-NOTICES.txt" <<'EOF'
-          Auto Essentials Lite includes super-resolution-10.onnx from the ONNX Model Zoo mirror on Hugging Face.
-          Model repository: onnxmodelzoo/super-resolution-10
+          Includes super-resolution-10.onnx from the ONNX Model Zoo mirror on Hugging Face.
+          Repository: onnxmodelzoo/super-resolution-10
           Pinned revision: 395472c4b6b92f788357237983d83fd913cfe7e3
-          License: Apache License 2.0
-          Model SHA-256: 85f36ff88cc504a24af5e0602148bc56a8aa09a58eca8c0da2756f3e8186035e
-          This model is a lightweight compatibility pack and is not a face-reconstruction model.
+          Licence: Apache License 2.0
+          SHA-256: 85f36ff88cc504a24af5e0602148bc56a8aa09a58eca8c0da2756f3e8186035e
           EOF
 
+          python validate_neural_pack.py "$ROOT"
+
       - name: Build specialist processing-profile pack
-        if: inputs.pack != 'auto-essentials-lite'
+        if: inputs.pack != 'auto-essentials-lite' && inputs.pack != 'auto-restoration-core'
         shell: bash
         env:
           SELECTED_PACK: ${{ inputs.pack }}
@@ -141,7 +176,6 @@ jobs:
           python - <<'PY'
           import json, os
           from pathlib import Path
-
           selected = os.environ['SELECTED_PACK']
           catalog = json.load(open('model_packs/catalog.json', encoding='utf-8'))
           profiles = json.load(open('model_packs/profiles.json', encoding='utf-8'))['packs']
@@ -149,7 +183,7 @@ jobs:
           profile = profiles[selected]
           root = Path('dist-packs') / selected
           root.mkdir(parents=True, exist_ok=True)
-          (root / 'profile.json').write_text(json.dumps({
+          payload = {
               'schema_version': 1,
               'pack_id': selected,
               'name': profile['name'],
@@ -158,10 +192,12 @@ jobs:
               'scene_hints': profile.get('scene_hints', []),
               'capabilities': profile.get('capabilities', []),
               'settings': profile.get('settings', {}),
+              'depends_on': pack.get('depends_on', []),
               'pack_type': 'processing-profile',
               'neural_weights_included': False
-          }, indent=2), encoding='utf-8')
-          manifest = {
+          }
+          (root / 'profile.json').write_text(json.dumps(payload, indent=2), encoding='utf-8')
+          (root / 'manifest.json').write_text(json.dumps({
               'schema_version': 1,
               'pack_id': selected,
               'name': profile['name'],
@@ -170,13 +206,10 @@ jobs:
               'archive_url': '',
               'archive_sha256': '',
               'files': []
-          }
-          (root / 'manifest.json').write_text(json.dumps(manifest, indent=2), encoding='utf-8')
+          }, indent=2), encoding='utf-8')
           (root / 'README.txt').write_text(
-              f"{profile['name']} {manifest['version']}\n\n"
-              f"{profile['description']}\n\n"
-              "This is a working processing-profile pack. It configures PhotoPerfect's built-in Auto Engine. "
-              "It does not yet contain specialist neural reconstruction weights. Those can be added in a later pack update after licence and visual regression testing.\n",
+              f"{profile['name']} {pack.get('version', '1.0.0')}\n\n{profile['description']}\n\n"
+              "This specialist profile uses PhotoPerfect's built-in Auto Engine and any installed shared neural core.\n",
               encoding='utf-8'
           )
           PY
@@ -198,11 +231,7 @@ jobs:
           path: |
             dist-packs/${{ steps.metadata.outputs.filename }}
             dist-packs/${{ steps.metadata.outputs.filename }}.sha256
-            dist-packs/${{ steps.metadata.outputs.pack_id }}/manifest.json
-            dist-packs/${{ steps.metadata.outputs.pack_id }}/profile.json
-            dist-packs/${{ steps.metadata.outputs.pack_id }}/README.txt
-            dist-packs/${{ steps.metadata.outputs.pack_id }}/THIRD-PARTY-NOTICES.txt
-          if-no-files-found: warn
+            dist-packs/${{ steps.metadata.outputs.pack_id }}/**
 
       - name: Publish downloadable pack release
         if: inputs.publish
@@ -213,13 +242,8 @@ jobs:
           body: |
             Downloadable PhotoPerfect Studio Auto pack.
 
-            Auto Essentials Lite contains a verified Apache-2.0 ONNX super-resolution model.
-            Specialist packs currently contain working Auto Engine processing profiles. They do not claim to contain neural reconstruction weights until those weights have passed licensing, compatibility and visual regression checks.
+            Auto Restoration Core is a hybrid shared pack: verified neural super resolution plus safe built-in JPEG repair, denoise and deblur profiles. Specialist packs can depend on it without duplicating the model.
           files: |
             dist-packs/${{ steps.metadata.outputs.filename }}
             dist-packs/${{ steps.metadata.outputs.filename }}.sha256
-            dist-packs/${{ steps.metadata.outputs.pack_id }}/manifest.json
-            dist-packs/${{ steps.metadata.outputs.pack_id }}/profile.json
-            dist-packs/${{ steps.metadata.outputs.pack_id }}/README.txt
-            dist-packs/${{ steps.metadata.outputs.pack_id }}/THIRD-PARTY-NOTICES.txt
           make_latest: false
