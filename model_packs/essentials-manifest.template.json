@@ -1,15 +1,15 @@
 {
-  "schema_version": 1,
-  "pack_id": "photoperfect-essentials",
-  "name": "PhotoPerfect Essentials",
-  "version": "0.1.0",
-  "minimum_app_version": "2.0.0",
+  "schema_version": 2,
+  "pack_id": "auto-essentials",
+  "name": "Auto Essentials",
+  "version": "1.0.0",
+  "minimum_app_version": "2.3.0",
   "archive_url": "",
   "archive_sha256": "",
   "files": [
     {
       "capability": "jpeg_repair",
-      "filename": "jpeg_repair.onnx",
+      "filename": "models/auto_jpeg_recovery.onnx",
       "sha256": "",
       "size": 0,
       "providers": ["CUDAExecutionProvider", "DmlExecutionProvider", "CPUExecutionProvider"],
@@ -17,7 +17,7 @@
     },
     {
       "capability": "deblur",
-      "filename": "deblur.onnx",
+      "filename": "models/auto_deblur.onnx",
       "sha256": "",
       "size": 0,
       "providers": ["CUDAExecutionProvider", "DmlExecutionProvider", "CPUExecutionProvider"],
@@ -25,7 +25,7 @@
     },
     {
       "capability": "denoise",
-      "filename": "denoise.onnx",
+      "filename": "models/auto_denoise.onnx",
       "sha256": "",
       "size": 0,
       "providers": ["CUDAExecutionProvider", "DmlExecutionProvider", "CPUExecutionProvider"],
@@ -33,7 +33,15 @@
     },
     {
       "capability": "super_resolution",
-      "filename": "super_resolution_x2.onnx",
+      "filename": "models/auto_super_resolution_x2.onnx",
+      "sha256": "",
+      "size": 0,
+      "providers": ["CUDAExecutionProvider", "DmlExecutionProvider", "CPUExecutionProvider"],
+      "required": false
+    },
+    {
+      "capability": "face_recovery",
+      "filename": "models/auto_face_recovery.onnx",
       "sha256": "",
       "size": 0,
       "providers": ["CUDAExecutionProvider", "DmlExecutionProvider", "CPUExecutionProvider"],
@@ -41,7 +49,15 @@
     },
     {
       "capability": "face_protect",
-      "filename": "face_protect.onnx",
+      "filename": "models/auto_face_protect.onnx",
+      "sha256": "",
+      "size": 0,
+      "providers": ["CUDAExecutionProvider", "DmlExecutionProvider", "CPUExecutionProvider"],
+      "required": false
+    },
+    {
+      "capability": "lighting",
+      "filename": "models/auto_lighting.onnx",
       "sha256": "",
       "size": 0,
       "providers": ["CUDAExecutionProvider", "DmlExecutionProvider", "CPUExecutionProvider"],
@@ -49,7 +65,7 @@
     },
     {
       "capability": "colour",
-      "filename": "colour.onnx",
+      "filename": "models/auto_colour.onnx",
       "sha256": "",
       "size": 0,
       "providers": ["CUDAExecutionProvider", "DmlExecutionProvider", "CPUExecutionProvider"],
