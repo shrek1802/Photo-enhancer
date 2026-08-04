@@ -38,35 +38,43 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Check pack readiness
+      - name: Read pack metadata
+        id: metadata
         shell: bash
+        env:
+          SELECTED_PACK: ${{ inputs.pack }}
         run: |
           python - <<'PY'
-          import json
-          import os
-          import sys
+          import json, os
+          from pathlib import Path
 
           selected = os.environ['SELECTED_PACK']
           catalog = json.load(open('model_packs/catalog.json', encoding='utf-8'))
           pack = next((item for item in catalog['packs'] if item['pack_id'] == selected), None)
           if pack is None:
               raise SystemExit(f'Unknown pack: {selected}')
-          print(f"Selected: {pack['name']} {pack['version']}")
-          print(f"Status: {pack['status']}")
-          print(f"Capabilities: {', '.join(pack.get('capabilities', []))}")
-          if pack['status'] != 'ready':
-              print('This pack definition exists, but its licensed model weights and runtime are not ready for release.')
-              print('Do not publish it until conversion, checksum, licence and visual regression checks are complete.')
-              sys.exit(2)
+          profiles = json.load(open('model_packs/profiles.json', encoding='utf-8'))['packs']
+          profile = profiles.get(selected)
+          if selected != 'auto-essentials-lite' and profile is None:
+              raise SystemExit(f'Missing processing profile for {selected}')
+          display = pack['name']
+          version = pack.get('version', '1.0.0')
+          filename = display.replace('&', 'and').replace(' ', '-') + f'-{version}.zip'
+          with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as out:
+              out.write(f'pack_id={selected}\n')
+              out.write(f'name={display}\n')
+              out.write(f'version={version}\n')
+              out.write(f'filename={filename}\n')
+              out.write(f'tag=auto-pack-{selected}-v{version}\n')
+          print(f'Selected: {display} {version}')
+          print('Pack type:', 'neural model pack' if selected == 'auto-essentials-lite' else 'installable processing-profile pack')
           PY
-        env:
-          SELECTED_PACK: ${{ inputs.pack }}
 
-      - name: Install validation tools
+      - name: Install ONNX validation tools
         if: inputs.pack == 'auto-essentials-lite'
         run: python -m pip install --upgrade onnx onnxruntime
 
-      - name: Build Auto Essentials Lite
+      - name: Build Auto Essentials Lite neural pack
         if: inputs.pack == 'auto-essentials-lite'
         shell: bash
         run: |
@@ -99,7 +107,7 @@ jobs:
             "name": "Auto Essentials Lite",
             "version": "1.0.0",
             "minimum_app_version": "2.3.0",
-            "archive_url": "https://github.com/${{ github.repository }}/releases/download/auto-pack-essentials-lite-v1.0.0/Auto-Essentials-Lite-1.0.0.zip",
+            "archive_url": "https://github.com/${{ github.repository }}/releases/download/auto-pack-auto-essentials-lite-v1.0.0/Auto-Essentials-Lite-1.0.0.zip",
             "archive_sha256": "",
             "files": [
               {
@@ -123,33 +131,95 @@ jobs:
           This model is a lightweight compatibility pack and is not a face-reconstruction model.
           EOF
 
-          (cd dist-packs && zip -r "Auto-Essentials-Lite-1.0.0.zip" "$PACK_ID")
-          sha256sum "dist-packs/Auto-Essentials-Lite-1.0.0.zip" > "dist-packs/Auto-Essentials-Lite-1.0.0.zip.sha256"
+      - name: Build specialist processing-profile pack
+        if: inputs.pack != 'auto-essentials-lite'
+        shell: bash
+        env:
+          SELECTED_PACK: ${{ inputs.pack }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
 
-      - name: Upload pack artifact
-        if: inputs.pack == 'auto-essentials-lite'
+          selected = os.environ['SELECTED_PACK']
+          catalog = json.load(open('model_packs/catalog.json', encoding='utf-8'))
+          profiles = json.load(open('model_packs/profiles.json', encoding='utf-8'))['packs']
+          pack = next(item for item in catalog['packs'] if item['pack_id'] == selected)
+          profile = profiles[selected]
+          root = Path('dist-packs') / selected
+          root.mkdir(parents=True, exist_ok=True)
+          (root / 'profile.json').write_text(json.dumps({
+              'schema_version': 1,
+              'pack_id': selected,
+              'name': profile['name'],
+              'version': pack.get('version', '1.0.0'),
+              'description': profile['description'],
+              'scene_hints': profile.get('scene_hints', []),
+              'capabilities': profile.get('capabilities', []),
+              'settings': profile.get('settings', {}),
+              'pack_type': 'processing-profile',
+              'neural_weights_included': False
+          }, indent=2), encoding='utf-8')
+          manifest = {
+              'schema_version': 1,
+              'pack_id': selected,
+              'name': profile['name'],
+              'version': pack.get('version', '1.0.0'),
+              'minimum_app_version': '2.3.0',
+              'archive_url': '',
+              'archive_sha256': '',
+              'files': []
+          }
+          (root / 'manifest.json').write_text(json.dumps(manifest, indent=2), encoding='utf-8')
+          (root / 'README.txt').write_text(
+              f"{profile['name']} {manifest['version']}\n\n"
+              f"{profile['description']}\n\n"
+              "This is a working processing-profile pack. It configures PhotoPerfect's built-in Auto Engine. "
+              "It does not yet contain specialist neural reconstruction weights. Those can be added in a later pack update after licence and visual regression testing.\n",
+              encoding='utf-8'
+          )
+          PY
+
+      - name: Package selected pack
+        shell: bash
+        env:
+          PACK_ID: ${{ steps.metadata.outputs.pack_id }}
+          FILENAME: ${{ steps.metadata.outputs.filename }}
+        run: |
+          set -euo pipefail
+          (cd dist-packs && zip -r "$FILENAME" "$PACK_ID")
+          sha256sum "dist-packs/$FILENAME" > "dist-packs/$FILENAME.sha256"
+
+      - name: Upload downloadable artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Auto-Essentials-Lite-1.0.0
+          name: ${{ steps.metadata.outputs.name }}-${{ steps.metadata.outputs.version }}
           path: |
-            dist-packs/Auto-Essentials-Lite-1.0.0.zip
-            dist-packs/Auto-Essentials-Lite-1.0.0.zip.sha256
-            dist-packs/auto-essentials-lite/manifest.json
-            dist-packs/auto-essentials-lite/THIRD-PARTY-NOTICES.txt
+            dist-packs/${{ steps.metadata.outputs.filename }}
+            dist-packs/${{ steps.metadata.outputs.filename }}.sha256
+            dist-packs/${{ steps.metadata.outputs.pack_id }}/manifest.json
+            dist-packs/${{ steps.metadata.outputs.pack_id }}/profile.json
+            dist-packs/${{ steps.metadata.outputs.pack_id }}/README.txt
+            dist-packs/${{ steps.metadata.outputs.pack_id }}/THIRD-PARTY-NOTICES.txt
+          if-no-files-found: warn
 
-      - name: Publish model pack release
-        if: inputs.pack == 'auto-essentials-lite' && inputs.publish
+      - name: Publish downloadable pack release
+        if: inputs.publish
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: auto-pack-essentials-lite-v1.0.0
-          name: Auto Essentials Lite 1.0.0
+          tag_name: ${{ steps.metadata.outputs.tag }}
+          name: ${{ steps.metadata.outputs.name }} ${{ steps.metadata.outputs.version }}
           body: |
-            First real Auto model pack for PhotoPerfect Studio.
+            Downloadable PhotoPerfect Studio Auto pack.
 
-            Includes a lightweight Apache-2.0 ONNX super-resolution model used to verify pack installation, checksum validation and GPU/CPU inference.
+            Auto Essentials Lite contains a verified Apache-2.0 ONNX super-resolution model.
+            Specialist packs currently contain working Auto Engine processing profiles. They do not claim to contain neural reconstruction weights until those weights have passed licensing, compatibility and visual regression checks.
           files: |
-            dist-packs/Auto-Essentials-Lite-1.0.0.zip
-            dist-packs/Auto-Essentials-Lite-1.0.0.zip.sha256
-            dist-packs/auto-essentials-lite/manifest.json
-            dist-packs/auto-essentials-lite/THIRD-PARTY-NOTICES.txt
+            dist-packs/${{ steps.metadata.outputs.filename }}
+            dist-packs/${{ steps.metadata.outputs.filename }}.sha256
+            dist-packs/${{ steps.metadata.outputs.pack_id }}/manifest.json
+            dist-packs/${{ steps.metadata.outputs.pack_id }}/profile.json
+            dist-packs/${{ steps.metadata.outputs.pack_id }}/README.txt
+            dist-packs/${{ steps.metadata.outputs.pack_id }}/THIRD-PARTY-NOTICES.txt
           make_latest: false
