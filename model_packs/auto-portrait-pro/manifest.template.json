@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "pack_id": "auto-portrait-pro",
+  "name": "Auto Portrait Pro",
+  "version": "1.0.0",
+  "minimum_app_version": "2.3.0",
+  "archive_url": "",
+  "archive_sha256": "",
+  "release_state": "blocked-until-regression-tested",
+  "identity_policy": {
+    "face_region_only": true,
+    "maximum_blend": 0.42,
+    "reject_on_identity_failure": true,
+    "whole_image_face_generation": false
+  },
+  "files": [
+    {
+      "capability": "face_recovery",
+      "filename": "models/face_recovery.onnx",
+      "sha256": "",
+      "size": 0,
+      "providers": ["CUDAExecutionProvider", "DmlExecutionProvider", "CPUExecutionProvider"],
+      "required": true,
+      "source_project": "TencentARC/GFPGAN",
+      "source_model": "GFPGANv1.3.pth",
+      "license": "Apache-2.0 with bundled third-party notices"
+    },
+    {
+      "capability": "lighting",
+      "filename": "models/portrait_lighting.onnx",
+      "sha256": "",
+      "size": 0,
+      "providers": ["CUDAExecutionProvider", "DmlExecutionProvider", "CPUExecutionProvider"],
+      "required": false
+    }
+  ]
+}
