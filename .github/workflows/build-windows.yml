@@ -62,6 +62,7 @@ jobs:
             --collect-all onnxruntime `
             --hidden-import model_manager `
             --hidden-import capability_runtime `
+            --hidden-import auto_profile_runtime `
             --hidden-import photoperfect_engine `
             --hidden-import photoperfect_intelligence `
             --hidden-import auto_model_manager_dialog `
@@ -75,7 +76,7 @@ jobs:
           Copy-Item "dist/${{ matrix.exe_name }}.exe" "package/${{ matrix.exe_name }}.exe"
           Copy-Item README.md "package/README.txt"
           Copy-Item "model_packs/essentials-manifest.template.json" "package/model_packs/auto-essentials-manifest.template.json"
-          Set-Content -Path "package/models/AUTO_MODEL_PACKS.txt" -Value "Use Auto Model Manager inside PhotoPerfect Studio to install checksum-verified Auto model packs. Built-in restoration remains available without external models."
+          Set-Content -Path "package/models/AUTO_MODEL_PACKS.txt" -Value "Use Auto Model Manager inside PhotoPerfect Studio to install checksum-verified Auto model and specialist profile packs. Built-in restoration remains available without external packs."
           Compress-Archive -Path "package/*" -DestinationPath "${{ matrix.exe_name }}-Windows.zip" -Force
       - uses: actions/upload-artifact@v4
         with:
@@ -92,16 +93,17 @@ jobs:
           body: |
             Manual PhotoPerfect Studio Windows release.
 
+            - installed specialist profile packs now change the processing path
             - Auto Model Manager for secure ZIP or manifest-based installation
             - Auto Face Recovery and Auto Face Protect region processing
             - fixed-size and dynamic ONNX model input support
             - safer feathered face relighting
             - faces, hair and nearby clothing protected from flare inpainting
             - installed Auto Super Resolution used directly when available
-            - detailed per-image pipeline, models, problems and quality results
+            - detailed per-image pipeline, models, profiles, problems and quality results
             - AMD DirectML and NVIDIA CUDA editions
 
-            Model weights remain separate release assets and no fake or unlicensed weights are included.
+            Neural model weights remain separate release assets. Profile packs use conservative built-in processing until verified neural models are added.
           files: |
             dist/${{ matrix.exe_name }}.exe
             ${{ matrix.exe_name }}-Windows.zip
