@@ -14,24 +14,18 @@ jobs:
   test:
     runs-on: windows-latest
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
           cache: pip
-      - name: Install test dependencies
+      - name: Install and test
         shell: pwsh
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-      - name: Compile source
-        shell: pwsh
-        run: python -m compileall -q .
-      - name: Run Phase 2 to Phase 4 regression tests
-        shell: pwsh
-        run: pytest -q
+          python -m compileall -q .
+          pytest -q
 
   build-windows:
     needs: test
@@ -40,31 +34,23 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - edition: AMD-DirectML
-            runtime: onnxruntime-directml==1.20.1
+          - runtime: onnxruntime-directml==1.20.1
             exe_name: PhotoPerfect-Studio-AMD-DirectML
-          - edition: NVIDIA-CUDA
-            runtime: onnxruntime-gpu==1.20.2
+          - runtime: onnxruntime-gpu==1.20.2
             exe_name: PhotoPerfect-Studio-NVIDIA-CUDA
-
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
           cache: pip
-
       - name: Install dependencies
         shell: pwsh
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
           pip install "${{ matrix.runtime }}"
-
-      - name: Build standalone EXE
+      - name: Build EXE
         shell: pwsh
         run: |
           pyinstaller --noconfirm --clean --onefile --windowed `
@@ -73,57 +59,40 @@ jobs:
             --collect-all PySide6 `
             --collect-all onnxruntime `
             --hidden-import model_manager `
-            --hidden-import capability_runtime `
-            --hidden-import photoperfect_intelligence `
+            --hidden-import photoperfect_engine `
             app.py
-
-      - name: Package build
+      - name: Package
         shell: pwsh
         run: |
-          New-Item -ItemType Directory -Force -Path package | Out-Null
-          New-Item -ItemType Directory -Force -Path package/models | Out-Null
-          New-Item -ItemType Directory -Force -Path package/model_packs | Out-Null
+          New-Item -ItemType Directory -Force -Path package/models/packs/auto-essentials | Out-Null
           Copy-Item "dist/${{ matrix.exe_name }}.exe" "package/${{ matrix.exe_name }}.exe"
           Copy-Item README.md "package/README.txt"
-          Copy-Item "model_packs/essentials-manifest.template.json" "package/model_packs/essentials-manifest.template.json"
-          Set-Content -Path "package/models/MODEL_PACK_INFO.txt" -Value "PhotoPerfect Studio v4 combines adaptive restoration, specialist ONNX capabilities, face protection and post-processing identity/quality validation."
+          Copy-Item "models/packs/auto-essentials/manifest.json" "package/models/packs/auto-essentials/manifest.json"
           Compress-Archive -Path "package/*" -DestinationPath "${{ matrix.exe_name }}-Windows.zip" -Force
-
-      - name: Upload build artifact
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.exe_name }}-Windows
           path: |
             dist/${{ matrix.exe_name }}.exe
             ${{ matrix.exe_name }}-Windows.zip
-          if-no-files-found: error
-
-      - name: Publish build to GitHub Releases
+      - name: Publish Release
         if: github.event_name != 'pull_request'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: studio-v4.0.${{ github.run_number }}
-          name: PhotoPerfect Studio v4.0.${{ github.run_number }}
+          tag_name: studio-v2.2.${{ github.run_number }}
+          name: PhotoPerfect Studio v2.2.${{ github.run_number }}
           body: |
-            PhotoPerfect Studio Phase 4 for Windows 11.
+            Phase 2A Auto release.
 
-            Phase 4 intelligence and safety:
-            - richer blur, noise, compression, dynamic-range, clipping and colour-cast inspection
-            - per-face size, sharpness, lighting and protection-level analysis
-            - Standard, Professional, Studio, Archive and Museum quality targets in the engine API
-            - post-processing identity and whole-image structure validation
-            - clipping and over-sharpening detection
-            - automatic rejection of unsafe same-geometry results
-            - detailed warnings for tiny faces, heavy compression, blur and exposure damage
-            - all Phase 2, Phase 3 and Phase 4 regression tests must pass before builds
+            - Auto Detect, Auto Enhance and Auto Restore branding
+            - visible app and Auto Engine versions
+            - Auto Essentials 1.0 versioned pack structure
+            - live image type, repair pipeline, detected problems and quality report
+            - Face Identity Lock enabled by default
+            - AMD DirectML and NVIDIA CUDA editions
 
-            Face analysis protects appearance; it does not identify people or infer demographic attributes.
-
-            Choose AMD DirectML for Radeon cards including RX 6900 XT.
-            Choose NVIDIA CUDA for GeForce cards including RTX 2060.
-            Both editions retain CPU fallback processing.
+            Auto Essentials 1.0 currently establishes the secure model-pack framework. No fake or unlicensed neural weights are included.
           files: |
             dist/${{ matrix.exe_name }}.exe
             ${{ matrix.exe_name }}-Windows.zip
-          prerelease: false
           make_latest: true
