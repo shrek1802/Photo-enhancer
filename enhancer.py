@@ -9,7 +9,8 @@ from PIL import Image, ImageOps
 
 from ai_engine import NeuralEngine, app_directory
 from auto_ai_pipeline import PipelineReport
-from capability_runtime import CapabilityReport, PhotoPerfectCapabilityRuntime
+from auto_profile_runtime import AutoProfileRuntime
+from capability_runtime import CapabilityReport, CapabilityStep, PhotoPerfectCapabilityRuntime
 from identity_guard import FaceIdentityGuard
 from photo_analysis import PhotoAnalysis, PhotoAnalyser
 from photoperfect_engine import PhotoPerfectEngine, RepairPlan, Validation
@@ -64,8 +65,8 @@ class ProcessResult:
 class PhotoEnhancer:
     """Auto Engine facade used by PhotoPerfect Studio.
 
-    Built-in restoration always remains available. Auto Essentials models are
-    loaded by capability and applied only when their specialised repair is useful.
+    Built-in restoration always remains available. Installed profile packs tune
+    the safe local processing, while neural packs are resolved by capability.
     """
 
     def __init__(self, options: EnhanceOptions):
@@ -74,19 +75,23 @@ class PhotoEnhancer:
         self.engine = PhotoPerfectEngine()
         self.intelligence = PhotoPerfectIntelligence()
         self.neural = NeuralEngine(enabled=options.neural_ai)
+        models_root = app_directory() / 'models'
         self.capabilities = PhotoPerfectCapabilityRuntime(
-            models_root=app_directory() / 'models', enabled=options.neural_ai
+            models_root=models_root, enabled=options.neural_ai
         )
+        self.profiles = AutoProfileRuntime(models_root)
         self.identity = FaceIdentityGuard()
 
     @property
     def engine_message(self) -> str:
         identity = 'Identity Lock ON' if self.options.identity_lock else 'Identity Lock OFF'
         installed = self.capabilities.manager.installed_capabilities()
+        profile_count = len(self.profiles.installed_profiles())
         capability_text = f'{len(installed)} Auto model capability/capabilities installed'
         return (
             f'Auto Engine v{AUTO_ENGINE_VERSION}; {self.neural.status.message}; '
-            f'{capability_text}; target {self.options.quality_target}; {identity}'
+            f'{capability_text}; {profile_count} specialist profile(s); '
+            f'target {self.options.quality_target}; {identity}'
         )
 
     def _read(self, path: Path) -> np.ndarray:
@@ -135,7 +140,6 @@ class PhotoEnhancer:
                  ((value > 232) & (saturation > 125))).astype(np.uint8) * 255)
         mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, np.ones((3, 3), np.uint8))
 
-        # Bright hair, skin, veils and clothing must never be mistaken for flare.
         for x, y, w, h in protected_faces:
             pad_x, pad_y = int(w * 0.55), int(h * 0.70)
             x0, y0 = max(0, x - pad_x), max(0, y - pad_y)
@@ -227,6 +231,20 @@ class PhotoEnhancer:
             plan,
             allow_super_resolution=wants_sr,
         )
+
+        processed, profile_report = self.profiles.apply(
+            processed,
+            plan.inspection.image_type,
+            analysis.scene,
+        )
+        for name, message in zip(profile_report.selected, profile_report.messages):
+            capability_report.steps.append(CapabilityStep(
+                capability=f'profile:{name}',
+                model_path=None,
+                available=True,
+                applied=True,
+                message=message,
+            ))
 
         current_faces = self.identity.detect(processed)
         if self.options.reduce_flare and not plan.inspection.is_monochrome:
