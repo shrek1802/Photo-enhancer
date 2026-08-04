@@ -38,7 +38,7 @@ class ModelPackManifest:
             ModelFile(
                 capability=str(item['capability']),
                 filename=str(item['filename']),
-                sha256=str(item['sha256']).lower(),
+                sha256=str(item.get('sha256', '')).lower(),
                 size=int(item.get('size', 0)),
                 providers=tuple(str(value) for value in item.get('providers', [])),
                 required=bool(item.get('required', True)),
@@ -69,12 +69,7 @@ class ModelPackError(RuntimeError):
 
 
 class PhotoPerfectModelManager:
-    """Installs and validates independently versioned PhotoPerfect model packs.
-
-    Downloads are staged in a temporary directory, SHA-256 verified, test-opened,
-    and swapped into place atomically. Existing working packs are retained until
-    the replacement has passed validation.
-    """
+    """Secure installer and registry for independently versioned Auto model packs."""
 
     def __init__(self, models_root: Path | str = 'models') -> None:
         self.models_root = Path(models_root)
@@ -122,6 +117,20 @@ class PhotoPerfectModelManager:
             )
         return self.validate(manifest, manifest_path.parent)
 
+    def installed_packs(self) -> list[InstalledPack]:
+        packs: list[InstalledPack] = []
+        for manifest_path in sorted(self.packs_root.glob('*/manifest.json')):
+            try:
+                manifest = self.load_manifest(manifest_path)
+                packs.append(self.validate(manifest, manifest_path.parent))
+            except Exception as exc:
+                fallback = ModelPackManifest(
+                    manifest_path.parent.name, manifest_path.parent.name,
+                    '0.0.0', '0.0.0', '', '',
+                )
+                packs.append(InstalledPack(fallback, manifest_path.parent, False, [str(exc)]))
+        return packs
+
     def validate(self, manifest: ModelPackManifest, directory: Path) -> InstalledPack:
         errors: list[str] = []
         for model in manifest.files:
@@ -132,9 +141,7 @@ class PhotoPerfectModelManager:
                 continue
             actual_size = path.stat().st_size
             if model.size and actual_size != model.size:
-                errors.append(
-                    f'Wrong size for {model.filename}: expected {model.size}, got {actual_size}'
-                )
+                errors.append(f'Wrong size for {model.filename}: expected {model.size}, got {actual_size}')
                 continue
             if model.sha256 and self.sha256(path) != model.sha256:
                 errors.append(f'Checksum failed for {model.filename}')
@@ -151,86 +158,96 @@ class PhotoPerfectModelManager:
             zipped.extractall(destination)
 
     @staticmethod
-    def _download(url: str, destination: Path, timeout: int = 120) -> None:
+    def _download(url: str, destination: Path, timeout: int = 300) -> None:
         request = urllib.request.Request(url, headers={'User-Agent': 'PhotoPerfect-Studio'})
         with urllib.request.urlopen(request, timeout=timeout) as response, destination.open('wb') as output:
             shutil.copyfileobj(response, output)
 
+    def _activate_candidate(self, manifest: ModelPackManifest, candidate: Path) -> InstalledPack:
+        manifest_path = candidate / 'manifest.json'
+        if not manifest_path.exists():
+            manifest_path.write_text(json.dumps(self.to_dict(manifest), indent=2), encoding='utf-8')
+
+        validated = self.validate(manifest, candidate)
+        if not validated.valid:
+            raise ModelPackError('; '.join(validated.errors))
+
+        target = self.pack_directory(manifest.pack_id)
+        backup = target.with_name(f'{target.name}.backup')
+        if backup.exists():
+            shutil.rmtree(backup)
+        if target.exists():
+            os.replace(target, backup)
+        try:
+            shutil.copytree(candidate, target)
+            final = self.validate(manifest, target)
+            if not final.valid:
+                raise ModelPackError('; '.join(final.errors))
+        except Exception:
+            if target.exists():
+                shutil.rmtree(target)
+            if backup.exists():
+                os.replace(backup, target)
+            raise
+        if backup.exists():
+            shutil.rmtree(backup)
+        return self.validate(manifest, target)
+
     def install(self, manifest: ModelPackManifest) -> InstalledPack:
         if not manifest.archive_url:
             raise ModelPackError('The model pack manifest has no archive URL')
-
         with tempfile.TemporaryDirectory(prefix='photoperfect-models-') as temporary:
-            staging_root = Path(temporary)
-            archive = staging_root / 'pack.zip'
-            extracted = staging_root / 'extracted'
+            root = Path(temporary)
+            archive = root / 'pack.zip'
+            extracted = root / 'extracted'
             extracted.mkdir()
             self._download(manifest.archive_url, archive)
-
-            if manifest.archive_sha256:
-                actual = self.sha256(archive)
-                if actual != manifest.archive_sha256:
-                    raise ModelPackError('Model pack archive checksum verification failed')
-
+            if manifest.archive_sha256 and self.sha256(archive) != manifest.archive_sha256:
+                raise ModelPackError('Model pack archive checksum verification failed')
             self._safe_extract(archive, extracted)
-            candidate = extracted
-            nested = extracted / manifest.pack_id
-            if nested.is_dir():
-                candidate = nested
+            candidate = extracted / manifest.pack_id if (extracted / manifest.pack_id).is_dir() else extracted
+            return self._activate_candidate(manifest, candidate)
 
-            manifest_path = candidate / 'manifest.json'
-            if not manifest_path.exists():
-                manifest_path.write_text(
-                    json.dumps(self.to_dict(manifest), indent=2), encoding='utf-8'
-                )
+    def install_local_archive(self, archive: Path | str) -> InstalledPack:
+        archive_path = Path(archive)
+        if not archive_path.exists():
+            raise ModelPackError('The selected model pack does not exist')
+        with tempfile.TemporaryDirectory(prefix='photoperfect-local-models-') as temporary:
+            extracted = Path(temporary) / 'extracted'
+            extracted.mkdir()
+            self._safe_extract(archive_path, extracted)
+            manifests = list(extracted.rglob('manifest.json'))
+            if len(manifests) != 1:
+                raise ModelPackError('The archive must contain exactly one manifest.json')
+            manifest = self.load_manifest(manifests[0])
+            return self._activate_candidate(manifest, manifests[0].parent)
 
-            validated = self.validate(manifest, candidate)
-            if not validated.valid:
-                raise ModelPackError('; '.join(validated.errors))
+    def install_from_manifest_url(self, url: str) -> InstalledPack:
+        return self.install(self.fetch_manifest(url))
 
-            target = self.pack_directory(manifest.pack_id)
-            backup = target.with_name(f'{target.name}.backup')
-            if backup.exists():
-                shutil.rmtree(backup)
-            if target.exists():
-                os.replace(target, backup)
-            try:
-                shutil.copytree(candidate, target)
-                final = self.validate(manifest, target)
-                if not final.valid:
-                    raise ModelPackError('; '.join(final.errors))
-            except Exception:
-                if target.exists():
-                    shutil.rmtree(target)
-                if backup.exists():
-                    os.replace(backup, target)
-                raise
-            if backup.exists():
-                shutil.rmtree(backup)
-            return self.validate(manifest, target)
+    def remove(self, pack_id: str) -> None:
+        target = self.pack_directory(pack_id)
+        if target.exists():
+            shutil.rmtree(target)
 
     def capability_path(self, capability: str) -> Path | None:
-        for manifest_path in sorted(self.packs_root.glob('*/manifest.json')):
-            try:
-                manifest = self.load_manifest(manifest_path)
-                installed = self.validate(manifest, manifest_path.parent)
-            except Exception:
-                continue
+        for installed in self.installed_packs():
             if not installed.valid:
                 continue
-            for model in manifest.files:
+            for model in installed.manifest.files:
                 if model.capability == capability:
-                    path = manifest_path.parent / model.filename
+                    path = installed.directory / model.filename
                     if path.exists():
                         return path
-        # Backwards-compatible loose-file layout.
         legacy_names = {
             'super_resolution': 'super_resolution_x2.onnx',
             'jpeg_repair': 'jpeg_repair.onnx',
             'deblur': 'deblur.onnx',
             'denoise': 'denoise.onnx',
             'face_protect': 'face_protect.onnx',
+            'face_recovery': 'face_recovery.onnx',
             'colour': 'colour.onnx',
+            'lighting': 'lighting.onnx',
             'inpaint': 'inpaint.onnx',
         }
         name = legacy_names.get(capability)
@@ -241,7 +258,7 @@ class PhotoPerfectModelManager:
         result: dict[str, Path] = {}
         for capability in (
             'super_resolution', 'jpeg_repair', 'deblur', 'denoise',
-            'face_protect', 'colour', 'inpaint',
+            'face_protect', 'face_recovery', 'colour', 'lighting', 'inpaint',
         ):
             path = self.capability_path(capability)
             if path:
@@ -251,7 +268,7 @@ class PhotoPerfectModelManager:
     @staticmethod
     def to_dict(manifest: ModelPackManifest) -> dict[str, Any]:
         return {
-            'schema_version': 1,
+            'schema_version': 2,
             'pack_id': manifest.pack_id,
             'name': manifest.name,
             'version': manifest.version,
