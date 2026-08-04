@@ -1,13 +1,13 @@
 {
   "schema_version": 1,
-  "catalog_version": "1.0.0",
+  "catalog_version": "1.1.0",
   "packs": [
     {
       "pack_id": "auto-essentials-lite",
       "name": "Auto Essentials Lite",
       "version": "1.0.0",
       "status": "ready",
-      "description": "A lightweight first neural super-resolution pack used to verify model downloading, checksum validation and GPU inference.",
+      "description": "Lightweight neural super-resolution pack used to verify model installation, checksums and GPU inference.",
       "capabilities": ["super_resolution"],
       "release_tag": "auto-pack-essentials-lite-v1.0.0"
     },
@@ -16,7 +16,7 @@
       "name": "Auto Portrait Pro",
       "version": "1.0.0",
       "status": "conversion-required",
-      "description": "Identity-checked face-region restoration and portrait relighting. Pack publication is blocked until converted ONNX weights pass identity regression tests.",
+      "description": "Identity-checked face-region restoration, portrait relighting and conservative facial-detail recovery.",
       "capabilities": ["face_recovery", "face_protect", "lighting", "colour"],
       "sources": ["TencentARC/GFPGAN"]
     },
@@ -25,7 +25,7 @@
       "name": "Auto Heritage",
       "version": "1.0.0",
       "status": "conversion-required",
-      "description": "Old-photo denoising, JPEG repair, restoration and super resolution. Publication is blocked until SwinIR models are converted and validated.",
+      "description": "Old-photo denoising, JPEG repair, tonal restoration and super resolution.",
       "capabilities": ["jpeg_repair", "denoise", "deblur", "super_resolution"],
       "sources": ["JingyunLiang/SwinIR"]
     },
@@ -34,9 +34,95 @@
       "name": "Auto Social Recovery",
       "version": "1.0.0",
       "status": "conversion-required",
-      "description": "Compression repair and real-world super resolution for Facebook, WhatsApp and other shared images. Publication is blocked until converted models pass screenshot regression tests.",
+      "description": "Compression repair and real-world reconstruction for Facebook, WhatsApp and other shared images.",
       "capabilities": ["jpeg_repair", "deblur", "super_resolution", "face_recovery"],
       "sources": ["JingyunLiang/SwinIR", "xinntao/Real-ESRGAN", "TencentARC/GFPGAN"]
+    },
+    {
+      "pack_id": "auto-night-recovery",
+      "name": "Auto Night Recovery",
+      "version": "1.0.0",
+      "status": "model-selection-required",
+      "description": "Low-light denoising, shadow recovery, colour restoration and controlled highlight handling.",
+      "capabilities": ["denoise", "lighting", "colour", "deblur"]
+    },
+    {
+      "pack_id": "auto-vehicle",
+      "name": "Auto Vehicle",
+      "version": "1.0.0",
+      "status": "model-selection-required",
+      "description": "Vehicle paint, glass, interiors, displays and fine-detail enhancement with number-plate protection.",
+      "capabilities": ["denoise", "deblur", "colour", "lighting", "super_resolution"]
+    },
+    {
+      "pack_id": "auto-pet-detail",
+      "name": "Auto Pet Detail",
+      "version": "1.0.0",
+      "status": "model-selection-required",
+      "description": "Fur, eye and nose detail recovery with motion cleanup and natural background handling.",
+      "capabilities": ["deblur", "denoise", "super_resolution", "colour"]
+    },
+    {
+      "pack_id": "auto-document-repair",
+      "name": "Auto Document Repair",
+      "version": "1.0.0",
+      "status": "runtime-extension-required",
+      "description": "Perspective correction, dewarping, paper cleanup, shadow reduction and text-detail enhancement.",
+      "capabilities": ["denoise", "deblur", "lighting", "super_resolution"],
+      "future_capabilities": ["document_dewarp", "text_enhance"]
+    },
+    {
+      "pack_id": "auto-raw-finish",
+      "name": "Auto RAW Finish",
+      "version": "1.0.0",
+      "status": "runtime-extension-required",
+      "description": "Professional camera finishing with lens, colour, highlight, shadow and sharpening corrections.",
+      "capabilities": ["denoise", "colour", "lighting", "deblur"],
+      "future_capabilities": ["lens_correction", "chromatic_aberration"]
+    },
+    {
+      "pack_id": "auto-event-match",
+      "name": "Auto Event Match",
+      "version": "1.0.0",
+      "status": "runtime-extension-required",
+      "description": "Batch-level exposure, white-balance, colour and skin-tone matching for weddings, christenings and parties.",
+      "capabilities": ["colour", "lighting", "face_protect"],
+      "future_capabilities": ["album_match"]
+    },
+    {
+      "pack_id": "auto-background-repair",
+      "name": "Auto Background Repair",
+      "version": "1.0.0",
+      "status": "runtime-extension-required",
+      "description": "Repairs damaged or distracting background regions while protecting people and foreground subjects.",
+      "capabilities": ["inpaint", "denoise", "super_resolution"],
+      "future_capabilities": ["subject_mask"]
+    },
+    {
+      "pack_id": "auto-lens-cleanup",
+      "name": "Auto Lens Cleanup",
+      "version": "1.0.0",
+      "status": "runtime-extension-required",
+      "description": "Flare, haze, glare, dust-spot, colour-fringing and soft-corner correction.",
+      "capabilities": ["inpaint", "deblur", "colour", "lighting"],
+      "future_capabilities": ["dehaze", "defringe"]
+    },
+    {
+      "pack_id": "auto-motion-recovery",
+      "name": "Auto Motion Recovery",
+      "version": "1.0.0",
+      "status": "model-selection-required",
+      "description": "Camera-shake, subject-motion and soft-focus recovery with artifact validation.",
+      "capabilities": ["deblur", "denoise", "super_resolution"]
+    },
+    {
+      "pack_id": "auto-bw-colour",
+      "name": "Auto B&W Colour",
+      "version": "1.0.0",
+      "status": "runtime-extension-required",
+      "description": "Black-and-white restoration with optional natural colourisation and identity-safe portrait handling.",
+      "capabilities": ["denoise", "deblur", "super_resolution", "face_protect"],
+      "future_capabilities": ["colourise"]
     }
   ]
 }
