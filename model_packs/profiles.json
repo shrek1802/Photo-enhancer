@@ -1,0 +1,97 @@
+{
+  "schema_version": 1,
+  "profile_version": "1.0.0",
+  "packs": {
+    "auto-portrait-pro": {
+      "name": "Auto Portrait Pro",
+      "description": "Identity-safe portrait recovery, local face lighting and natural skin-tone finishing.",
+      "scene_hints": ["Portrait / People", "Celebrations"],
+      "capabilities": ["face_recovery", "face_protect", "lighting", "colour"],
+      "settings": {"face_relight": 0.72, "detail_recovery": 0.42, "denoise": 0.26, "colour": 0.34, "identity_lock": true}
+    },
+    "auto-heritage": {
+      "name": "Auto Heritage",
+      "description": "Old photograph, scan and monochrome restoration with conservative damage cleanup.",
+      "scene_hints": ["Black & White Restore", "Old Photo"],
+      "capabilities": ["jpeg_repair", "denoise", "deblur", "super_resolution"],
+      "settings": {"contrast_recovery": 0.64, "denoise": 0.48, "detail_recovery": 0.38, "monochrome_tone": 0.60}
+    },
+    "auto-social-recovery": {
+      "name": "Auto Social Recovery",
+      "description": "Compression repair, screenshot border removal and small-face protection for shared images.",
+      "scene_hints": ["Screenshot Recovery"],
+      "capabilities": ["jpeg_repair", "deblur", "super_resolution", "face_recovery"],
+      "settings": {"jpeg_repair": 0.78, "detail_recovery": 0.52, "remove_ui": true, "auto_upscale": true}
+    },
+    "auto-night-recovery": {
+      "name": "Auto Night Recovery",
+      "description": "Low-light denoise, shadow recovery and restrained colour restoration.",
+      "scene_hints": ["Low Light"],
+      "capabilities": ["denoise", "deblur", "lighting", "colour"],
+      "settings": {"denoise": 0.72, "shadow_recovery": 0.70, "highlight_protection": 0.62, "colour": 0.28}
+    },
+    "auto-vehicle": {
+      "name": "Auto Vehicle",
+      "description": "Clean, natural vehicle photographs with protected plates, screens, paint and glass.",
+      "scene_hints": ["Vehicle"],
+      "capabilities": ["denoise", "deblur", "colour", "lighting"],
+      "settings": {"detail_recovery": 0.46, "reflection_control": 0.35, "colour": 0.40, "text_protection": true}
+    },
+    "auto-pet-detail": {
+      "name": "Auto Pet Detail",
+      "description": "Fur, eye and nose detail recovery with gentle motion cleanup.",
+      "scene_hints": ["Pet"],
+      "capabilities": ["denoise", "deblur", "super_resolution"],
+      "settings": {"detail_recovery": 0.56, "denoise": 0.30, "edge_protection": 0.66}
+    },
+    "auto-document-repair": {
+      "name": "Auto Document Repair",
+      "description": "Perspective, paper shadow and text cleanup for scanned or photographed documents.",
+      "scene_hints": ["Document"],
+      "capabilities": ["denoise", "deblur", "lighting"],
+      "settings": {"paper_cleanup": 0.72, "text_sharpen": 0.58, "shadow_recovery": 0.66, "perspective": true}
+    },
+    "auto-raw-finish": {
+      "name": "Auto RAW Finish",
+      "description": "Professional finishing for good camera photographs without aggressive reconstruction.",
+      "scene_hints": ["General Photograph"],
+      "capabilities": ["denoise", "colour", "lighting"],
+      "settings": {"denoise": 0.18, "colour": 0.36, "highlight_protection": 0.58, "detail_recovery": 0.26}
+    },
+    "auto-event-match": {
+      "name": "Auto Event Match",
+      "description": "Consistent exposure, white balance and colour across wedding, christening and party batches.",
+      "scene_hints": ["Celebrations", "Portrait / People"],
+      "capabilities": ["colour", "lighting", "face_protect"],
+      "settings": {"batch_match": true, "white_balance": 0.64, "exposure_match": 0.60, "skin_tone_protection": 0.76}
+    },
+    "auto-background-repair": {
+      "name": "Auto Background Repair",
+      "description": "Conservative cleanup of small distractions and damaged non-face background regions.",
+      "scene_hints": ["General Photograph", "Portrait / People"],
+      "capabilities": ["inpaint", "denoise"],
+      "settings": {"inpaint_limit": 0.008, "face_exclusion": true, "text_exclusion": true}
+    },
+    "auto-lens-cleanup": {
+      "name": "Auto Lens Cleanup",
+      "description": "Small flare, haze, glare, dust-spot and colour-fringing cleanup with subject protection.",
+      "scene_hints": ["General Photograph", "Portrait / People", "Vehicle"],
+      "capabilities": ["inpaint", "colour", "lighting"],
+      "settings": {"flare_cleanup": 0.42, "haze_reduction": 0.34, "fringe_reduction": 0.42, "subject_protection": true}
+    },
+    "auto-motion-recovery": {
+      "name": "Auto Motion Recovery",
+      "description": "Camera-shake and subject-motion recovery with oversharpening protection.",
+      "scene_hints": ["General Photograph", "Portrait / People", "Pet", "Vehicle"],
+      "capabilities": ["deblur", "denoise", "super_resolution"],
+      "settings": {"deblur": 0.58, "detail_recovery": 0.46, "halo_limit": 0.18}
+    },
+    "auto-bw-colour": {
+      "name": "Auto B&W Colour",
+      "description": "Black-and-white restoration with optional natural colourisation support.",
+      "scene_hints": ["Black & White Restore"],
+      "capabilities": ["denoise", "deblur", "colourisation", "super_resolution"],
+      "settings": {"monochrome_restore": 0.72, "colourisation_optional": true, "identity_lock": true}
+    }
+  }
+}
