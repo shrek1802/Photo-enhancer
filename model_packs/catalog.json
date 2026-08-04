@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "catalog_version": "1.1.0",
+  "catalog_version": "1.2.0",
   "packs": [
     {
       "pack_id": "auto-essentials-lite",
@@ -10,6 +10,17 @@
       "description": "Lightweight neural super-resolution pack used to verify model installation, checksums and GPU inference.",
       "capabilities": ["super_resolution"],
       "release_tag": "auto-pack-essentials-lite-v1.0.0"
+    },
+    {
+      "pack_id": "auto-restoration-core",
+      "name": "Auto Restoration Core",
+      "version": "1.0.0",
+      "status": "ready-hybrid",
+      "description": "Shared restoration foundation used by Motion, Night, Heritage and Social packs. Version 1 combines verified neural super resolution with safe built-in denoise, deblur, JPEG repair and validation profiles.",
+      "capabilities": ["super_resolution", "jpeg_repair", "denoise", "deblur"],
+      "neural_capabilities": ["super_resolution"],
+      "profile_capabilities": ["jpeg_repair", "denoise", "deblur"],
+      "release_tag": "auto-pack-auto-restoration-core-v1.0.0"
     },
     {
       "pack_id": "auto-portrait-pro",
@@ -27,6 +38,7 @@
       "status": "conversion-required",
       "description": "Old-photo denoising, JPEG repair, tonal restoration and super resolution.",
       "capabilities": ["jpeg_repair", "denoise", "deblur", "super_resolution"],
+      "depends_on": ["auto-restoration-core"],
       "sources": ["JingyunLiang/SwinIR"]
     },
     {
@@ -36,6 +48,7 @@
       "status": "conversion-required",
       "description": "Compression repair and real-world reconstruction for Facebook, WhatsApp and other shared images.",
       "capabilities": ["jpeg_repair", "deblur", "super_resolution", "face_recovery"],
+      "depends_on": ["auto-restoration-core"],
       "sources": ["JingyunLiang/SwinIR", "xinntao/Real-ESRGAN", "TencentARC/GFPGAN"]
     },
     {
@@ -44,7 +57,8 @@
       "version": "1.0.0",
       "status": "model-selection-required",
       "description": "Low-light denoising, shadow recovery, colour restoration and controlled highlight handling.",
-      "capabilities": ["denoise", "lighting", "colour", "deblur"]
+      "capabilities": ["denoise", "lighting", "colour", "deblur"],
+      "depends_on": ["auto-restoration-core"]
     },
     {
       "pack_id": "auto-vehicle",
@@ -113,7 +127,8 @@
       "version": "1.0.0",
       "status": "model-selection-required",
       "description": "Camera-shake, subject-motion and soft-focus recovery with artifact validation.",
-      "capabilities": ["deblur", "denoise", "super_resolution"]
+      "capabilities": ["deblur", "denoise", "super_resolution"],
+      "depends_on": ["auto-restoration-core"]
     },
     {
       "pack_id": "auto-bw-colour",
