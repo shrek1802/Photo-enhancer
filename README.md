@@ -1,127 +1,85 @@
 # PhotoPerfect Studio
 
-Professional photo enhancement and restoration for Windows 11.
+Professional automatic photo enhancement and restoration for Windows 11.
 
-## Simple input options
-
-At the top of the app you can:
+## Inputs
 
 - Select one photo
 - Select multiple photos
 - Select a complete folder
-- Drag and drop photos or a folder onto the window
+- Drag and drop photos or a folder
 
-Original photographs are never overwritten. Finished copies are saved inside a `Professionally Enhanced` folder beside the selected photos or inside the selected source folder.
+Original photographs are never overwritten. Finished copies are saved in a `Professionally Enhanced` folder.
 
-## Enhancement modes
+## Automatic modes
 
-- **Auto Detect** — recommended; analyses every photograph and chooses the safest processing plan automatically
-- **Auto Enhance** — lightly improves already-good photographs
+- **Auto Detect** — recommended; analyses each photograph and builds its own repair plan
+- **Auto Enhance** — light professional finishing for already-good photographs
 - **Auto Restore** — stronger repair for faded, blurred, noisy or compressed photographs
-- **Family**
-- **Portrait**
-- **Celebrations**
-- **Landscape**
-- **Low Light**
-- **Screenshot Recovery**
+- **Auto Portrait** — identity-safe portrait lighting and face recovery
+- **Auto Celebrations** — weddings, christenings, birthdays and family occasions
+- **Auto Landscape**
+- **Auto Low Light**
+- **Auto Screenshot Recovery**
 - **Advanced**
 
-## PhotoPerfect Engine Phase 2
+## Phase 2B
 
-Auto Detect performs a proper inspection before processing. It measures screenshot and social-media UI likelihood, monochrome content, resolution, face size, JPEG blocking, blur, noise, exposure, highlights and contrast.
+PhotoPerfect Studio v2.3 adds the real Auto Essentials runtime and model-management interface.
 
-For each image it builds a dynamic repair plan, tries Gentle, Balanced and Strong safe strategies, then keeps the highest-scoring accepted result. If every candidate scores worse, the original is retained.
+The Auto Engine can now request and run these independently updateable capabilities:
 
-## PhotoPerfect Engine Phase 3
+- Auto JPEG Recovery
+- Auto Denoise
+- Auto Deblur
+- Auto Face Recovery
+- Auto Face Protect
+- Auto Lighting
+- Auto Colour
+- Auto Super Resolution
 
-Phase 3 adds a real neural capability layer between the repair planner and the model packs.
+Whole-image models use tiled ONNX inference. Fixed-size ONNX inputs are also supported. Face models run only on feathered face regions and are blended conservatively to protect identity.
 
-The engine can request these capabilities automatically:
+The app shows the detected image type, problems found, chosen pipeline, stages, installed models and before/after quality result for every photograph.
 
-- `jpeg_repair`
-- `denoise`
-- `deblur`
-- `colour`
-- `super_resolution`
+## Auto Model Manager
 
-Each capability is resolved through the installed model-pack manifests. The runtime selects CUDA, DirectML or CPU automatically, uses tiled ONNX inference, skips missing models safely and falls back to the built-in engine if inference fails.
+Open **Auto Model Manager** inside the app to:
 
-## PhotoPerfect Engine Phase 4
+- View installed model packs and capabilities
+- Install a local model-pack ZIP
+- Install from a manifest URL
+- Validate file sizes and SHA-256 checksums
+- Keep the previous working pack if an update fails
+- Open the local model folder
 
-Phase 4 adds the intelligence and safety layer needed before generative reconstruction is introduced.
+Model packs are versioned separately from the Windows application, allowing restoration quality to improve without rebuilding the complete app.
 
-It now measures:
-
-- Blur and local sharpness
-- Noise and JPEG compression
-- Dynamic range
-- Deep shadows and clipped highlights
-- Colour cast
-- Whole-image structural similarity
-- Per-face size, brightness, contrast and sharpness
-
-Every detected face receives a protection level:
-
-- Normal
-- High
-- Maximum
-
-Tiny or heavily blurred faces automatically receive stronger protection and a lower permitted change amount.
-
-After processing, the candidate is checked for:
-
-- Face-region similarity
-- Whole-image structural similarity
-- New shadow or highlight clipping
-- Excessive sharpening
-
-Unsafe same-geometry results are rejected and the original is retained.
-
-The engine API supports five quality targets:
-
-- Standard
-- Professional — current default
-- Studio
-- Archive
-- Museum
-
-Higher targets use progressively stricter identity, structure, clipping and sharpening limits. The selectable interface for these targets will be exposed alongside the future reconstruction controls; current automatic processing uses Professional.
-
-Phase 4 face analysis protects appearance. It does not identify people and does not infer age, ethnicity, gender or other demographic attributes.
-
-## Face Identity Lock
-
-Face Identity Lock is enabled by default. It preserves real facial features and expressions, avoids generative face replacement and prefers a less dramatic faithful result when stronger processing could alter somebody's appearance.
-
-## Versioned model packs
-
-Packs are separate from app releases and can be updated independently. A manifest records the pack version, minimum app version, capabilities, provider support, file sizes, SHA-256 checksums and archive details.
-
-Installations are staged, checksum verified and validated before replacing the current pack. A failed installation retains or restores the previous working pack.
-
-The first pack template is:
+The pack template is:
 
 `model_packs/essentials-manifest.template.json`
 
-No unlicensed, fake or empty neural weights are bundled. Genuine PhotoPerfect model packs will be released separately after model compatibility, output quality and licensing have been verified.
+No fake or unlicensed neural weights are bundled. Built-in restoration remains available when no external models are installed.
+
+## Face Identity Lock
+
+Face Identity Lock is enabled by default. It protects facial features and expressions, uses restrained face-model blending and rejects unsafe same-geometry results.
+
+Flare cleanup now excludes faces, hair and nearby clothing so bright subjects are not accidentally inpainted or partially removed.
 
 ## GPU editions
 
-Every release provides two Windows builds:
+Every release provides:
 
-- **PhotoPerfect-Studio-AMD-DirectML.exe** — for AMD Radeon cards such as the RX 6900 XT
-- **PhotoPerfect-Studio-NVIDIA-CUDA.exe** — for NVIDIA cards such as the RTX 2060
+- **PhotoPerfect-Studio-AMD-DirectML.exe** — AMD Radeon cards such as RX 6900 XT
+- **PhotoPerfect-Studio-NVIDIA-CUDA.exe** — NVIDIA cards such as RTX 2060
 
 Both editions retain CPU fallback processing.
 
 ## Quality gates
 
-GitHub Actions runs source compilation plus Phase 2, Phase 3 and Phase 4 regression tests before either Windows executable is built. Tests cover screenshot routing, monochrome restoration, model-pack validation, capability fallback, quality inspection and rejection of structurally unsafe results.
+GitHub Actions compiles the source and runs regression tests before building either executable. Tests cover automatic routing, model-pack installation, checksums, face-capability selection and identity-safe processing.
 
-## Download
+## Limitation
 
-Open the repository's **Releases** section and download the newest AMD DirectML or NVIDIA CUDA edition.
-
-## Important limitation
-
-No software can guarantee recovery of detail that was never captured or was completely destroyed. PhotoPerfect Studio uses conservative processing, Face Identity Lock and quality validation rather than silently inventing a different face.
+Reconstruction models infer plausible missing detail; they cannot prove what destroyed pixels originally contained. PhotoPerfect therefore favours faithful identity-preserving results over aggressive face invention.
