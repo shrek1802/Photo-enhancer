@@ -1,12 +1,6 @@
 name: Build Auto Model Packs
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - '.github/workflows/build-auto-model-packs.yml'
-      - 'model_packs/catalog.json'
-      - 'model_packs/auto-essentials-lite/**'
   workflow_dispatch:
     inputs:
       pack:
@@ -35,7 +29,7 @@ jobs:
         run: python -m pip install --upgrade onnx onnxruntime
 
       - name: Build Auto Essentials Lite
-        if: github.event_name == 'push' || inputs.pack == 'auto-essentials-lite'
+        if: inputs.pack == 'auto-essentials-lite'
         shell: bash
         run: |
           set -euo pipefail
@@ -105,7 +99,7 @@ jobs:
             dist-packs/auto-essentials-lite/THIRD-PARTY-NOTICES.txt
 
       - name: Publish model pack release
-        if: github.event_name == 'push' || inputs.publish
+        if: inputs.publish
         uses: softprops/action-gh-release@v2
         with:
           tag_name: auto-pack-essentials-lite-v1.0.0
