@@ -1,0 +1,119 @@
+name: Build Auto Model Packs
+
+on:
+  workflow_dispatch:
+    inputs:
+      pack:
+        description: Model pack to build
+        required: true
+        default: auto-essentials-lite
+        type: choice
+        options:
+          - auto-essentials-lite
+      publish:
+        description: Publish a GitHub Release
+        required: true
+        default: true
+        type: boolean
+
+permissions:
+  contents: write
+
+jobs:
+  build-pack:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install validation tools
+        run: python -m pip install --upgrade onnx onnxruntime
+
+      - name: Build Auto Essentials Lite
+        if: inputs.pack == 'auto-essentials-lite'
+        shell: bash
+        run: |
+          set -euo pipefail
+          PACK_ID=auto-essentials-lite
+          PACK_VERSION=1.0.0
+          ROOT="dist-packs/${PACK_ID}"
+          mkdir -p "$ROOT/models"
+
+          curl -L --fail --retry 3 \
+            "https://huggingface.co/onnxmodelzoo/super-resolution-10/resolve/395472c4b6b92f788357237983d83fd913cfe7e3/super-resolution-10.onnx?download=true" \
+            -o "$ROOT/models/super_resolution.onnx"
+
+          echo "85f36ff88cc504a24af5e0602148bc56a8aa09a58eca8c0da2756f3e8186035e  $ROOT/models/super_resolution.onnx" | sha256sum --check
+
+          python - <<'PY'
+          import onnx
+          import onnxruntime as ort
+          path = 'dist-packs/auto-essentials-lite/models/super_resolution.onnx'
+          onnx.checker.check_model(onnx.load(path))
+          session = ort.InferenceSession(path, providers=['CPUExecutionProvider'])
+          assert session.get_inputs() and session.get_outputs()
+          print('Validated:', session.get_inputs()[0].shape, '->', session.get_outputs()[0].shape)
+          PY
+
+          SIZE=$(stat -c%s "$ROOT/models/super_resolution.onnx")
+          cat > "$ROOT/manifest.json" <<EOF
+          {
+            "schema_version": 1,
+            "pack_id": "auto-essentials-lite",
+            "name": "Auto Essentials Lite",
+            "version": "1.0.0",
+            "minimum_app_version": "2.3.0",
+            "archive_url": "https://github.com/${{ github.repository }}/releases/download/auto-pack-essentials-lite-v1.0.0/Auto-Essentials-Lite-1.0.0.zip",
+            "archive_sha256": "",
+            "files": [
+              {
+                "capability": "super_resolution",
+                "filename": "models/super_resolution.onnx",
+                "sha256": "85f36ff88cc504a24af5e0602148bc56a8aa09a58eca8c0da2756f3e8186035e",
+                "size": $SIZE,
+                "providers": ["CUDAExecutionProvider", "DmlExecutionProvider", "CPUExecutionProvider"],
+                "required": true
+              }
+            ]
+          }
+          EOF
+
+          cat > "$ROOT/THIRD-PARTY-NOTICES.txt" <<'EOF'
+          Auto Essentials Lite includes super-resolution-10.onnx from the ONNX Model Zoo mirror on Hugging Face.
+          Model repository: onnxmodelzoo/super-resolution-10
+          Pinned revision: 395472c4b6b92f788357237983d83fd913cfe7e3
+          License: Apache License 2.0
+          Model SHA-256: 85f36ff88cc504a24af5e0602148bc56a8aa09a58eca8c0da2756f3e8186035e
+          This model is a lightweight compatibility pack and is not a face-reconstruction model.
+          EOF
+
+          (cd dist-packs && zip -r "Auto-Essentials-Lite-1.0.0.zip" "$PACK_ID")
+          sha256sum "dist-packs/Auto-Essentials-Lite-1.0.0.zip" > "dist-packs/Auto-Essentials-Lite-1.0.0.zip.sha256"
+
+      - name: Upload pack artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Auto-Essentials-Lite-1.0.0
+          path: |
+            dist-packs/Auto-Essentials-Lite-1.0.0.zip
+            dist-packs/Auto-Essentials-Lite-1.0.0.zip.sha256
+            dist-packs/auto-essentials-lite/manifest.json
+            dist-packs/auto-essentials-lite/THIRD-PARTY-NOTICES.txt
+
+      - name: Publish model pack release
+        if: inputs.publish
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: auto-pack-essentials-lite-v1.0.0
+          name: Auto Essentials Lite 1.0.0
+          body: |
+            First real Auto model pack for PhotoPerfect Studio.
+
+            Includes a lightweight Apache-2.0 ONNX super-resolution model used to verify pack installation, checksum validation and GPU/CPU inference.
+
+            This is not yet Auto Portrait Pro, Auto Heritage or Auto Social Recovery. Those packs remain blocked until their stronger models are converted to ONNX and pass visual, identity and regression tests.
+          files: |
+            dist-packs/Auto-Essentials-Lite-1.0.0.zip
+            dist-packs/Auto-Essentials-Lite-1.0.0.zip.sha256
+            dist-packs/auto-essentials-lite/manifest.json
+            dist-packs/auto-essentials-lite/THIRD-PARTY-NOTICES.txt
+          make_latest: false
