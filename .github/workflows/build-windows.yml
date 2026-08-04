@@ -59,15 +59,21 @@ jobs:
             --collect-all PySide6 `
             --collect-all onnxruntime `
             --hidden-import model_manager `
+            --hidden-import capability_runtime `
             --hidden-import photoperfect_engine `
+            --hidden-import photoperfect_intelligence `
+            --hidden-import auto_model_manager_dialog `
+            --hidden-import version_info `
             app.py
       - name: Package
         shell: pwsh
         run: |
-          New-Item -ItemType Directory -Force -Path package/models/packs/auto-essentials | Out-Null
+          New-Item -ItemType Directory -Force -Path package/models/packs | Out-Null
+          New-Item -ItemType Directory -Force -Path package/model_packs | Out-Null
           Copy-Item "dist/${{ matrix.exe_name }}.exe" "package/${{ matrix.exe_name }}.exe"
           Copy-Item README.md "package/README.txt"
-          Copy-Item "models/packs/auto-essentials/manifest.json" "package/models/packs/auto-essentials/manifest.json"
+          Copy-Item "model_packs/essentials-manifest.template.json" "package/model_packs/auto-essentials-manifest.template.json"
+          Set-Content -Path "package/models/AUTO_MODEL_PACKS.txt" -Value "Use Auto Model Manager inside PhotoPerfect Studio to install checksum-verified Auto model packs. Built-in restoration remains available without external models."
           Compress-Archive -Path "package/*" -DestinationPath "${{ matrix.exe_name }}-Windows.zip" -Force
       - uses: actions/upload-artifact@v4
         with:
@@ -79,19 +85,22 @@ jobs:
         if: github.event_name != 'pull_request'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: studio-v2.2.${{ github.run_number }}
-          name: PhotoPerfect Studio v2.2.${{ github.run_number }}
+          tag_name: studio-v2.3.${{ github.run_number }}
+          name: PhotoPerfect Studio v2.3.${{ github.run_number }}
           body: |
-            Phase 2A Auto release.
+            Phase 2B Auto release.
 
-            - Auto Detect, Auto Enhance and Auto Restore branding
-            - visible app and Auto Engine versions
-            - Auto Essentials 1.0 versioned pack structure
-            - live image type, repair pipeline, detected problems and quality report
-            - Face Identity Lock enabled by default
+            - Auto Model Manager for secure ZIP or manifest-based installation
+            - Auto Face Recovery and Auto Face Protect region processing
+            - fixed-size and dynamic ONNX model input support
+            - safer feathered face relighting
+            - faces, hair and nearby clothing protected from flare inpainting
+            - installed Auto Super Resolution used directly when available
+            - detailed per-image pipeline, models, problems and quality results
+            - centralised app and Auto Engine version numbers
             - AMD DirectML and NVIDIA CUDA editions
 
-            Auto Essentials 1.0 currently establishes the secure model-pack framework. No fake or unlicensed neural weights are included.
+            Model weights remain separate release assets and no fake or unlicensed weights are included.
           files: |
             dist/${{ matrix.exe_name }}.exe
             ${{ matrix.exe_name }}-Windows.zip
