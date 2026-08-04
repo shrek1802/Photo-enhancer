@@ -2,10 +2,12 @@ name: Build PhotoPerfect Studio for Windows
 
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-  pull_request:
-    branches: [main]
+    inputs:
+      publish:
+        description: Publish the completed builds to GitHub Releases
+        required: true
+        default: true
+        type: boolean
 
 permissions:
   contents: write
@@ -82,13 +84,13 @@ jobs:
             dist/${{ matrix.exe_name }}.exe
             ${{ matrix.exe_name }}-Windows.zip
       - name: Publish Release
-        if: github.event_name != 'pull_request'
+        if: inputs.publish
         uses: softprops/action-gh-release@v2
         with:
           tag_name: studio-v2.3.${{ github.run_number }}
           name: PhotoPerfect Studio v2.3.${{ github.run_number }}
           body: |
-            Phase 2B Auto release.
+            Manual PhotoPerfect Studio Windows release.
 
             - Auto Model Manager for secure ZIP or manifest-based installation
             - Auto Face Recovery and Auto Face Protect region processing
@@ -97,7 +99,6 @@ jobs:
             - faces, hair and nearby clothing protected from flare inpainting
             - installed Auto Super Resolution used directly when available
             - detailed per-image pipeline, models, problems and quality results
-            - centralised app and Auto Engine version numbers
             - AMD DirectML and NVIDIA CUDA editions
 
             Model weights remain separate release assets and no fake or unlicensed weights are included.
