@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "pack_id": "auto-essentials",
+  "name": "Auto Essentials",
+  "version": "1.0.0",
+  "minimum_app_version": "2.2.0",
+  "archive_url": "",
+  "archive_sha256": "",
+  "files": [],
+  "capabilities": [
+    "auto_super_resolution",
+    "auto_jpeg_recovery",
+    "auto_deblur",
+    "auto_denoise",
+    "auto_face_recovery",
+    "auto_lighting",
+    "auto_colour",
+    "auto_finish"
+  ],
+  "status": "framework-only",
+  "notice": "This manifest establishes the versioned Auto Essentials pack structure. Genuine licensed model weights will be added as separately verified release assets; no fake model files are included."
+}
