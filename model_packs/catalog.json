@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "catalog_version": "1.0.0",
+  "packs": [
+    {
+      "pack_id": "auto-essentials-lite",
+      "name": "Auto Essentials Lite",
+      "version": "1.0.0",
+      "status": "ready",
+      "description": "A lightweight first neural super-resolution pack used to verify model downloading, checksum validation and GPU inference.",
+      "capabilities": ["super_resolution"],
+      "release_tag": "auto-pack-essentials-lite-v1.0.0"
+    },
+    {
+      "pack_id": "auto-portrait-pro",
+      "name": "Auto Portrait Pro",
+      "version": "1.0.0",
+      "status": "conversion-required",
+      "description": "Identity-checked face-region restoration and portrait relighting. Pack publication is blocked until converted ONNX weights pass identity regression tests.",
+      "capabilities": ["face_recovery", "face_protect", "lighting", "colour"],
+      "sources": ["TencentARC/GFPGAN"]
+    },
+    {
+      "pack_id": "auto-heritage",
+      "name": "Auto Heritage",
+      "version": "1.0.0",
+      "status": "conversion-required",
+      "description": "Old-photo denoising, JPEG repair, restoration and super resolution. Publication is blocked until SwinIR models are converted and validated.",
+      "capabilities": ["jpeg_repair", "denoise", "deblur", "super_resolution"],
+      "sources": ["JingyunLiang/SwinIR"]
+    },
+    {
+      "pack_id": "auto-social-recovery",
+      "name": "Auto Social Recovery",
+      "version": "1.0.0",
+      "status": "conversion-required",
+      "description": "Compression repair and real-world super resolution for Facebook, WhatsApp and other shared images. Publication is blocked until converted models pass screenshot regression tests.",
+      "capabilities": ["jpeg_repair", "deblur", "super_resolution", "face_recovery"],
+      "sources": ["JingyunLiang/SwinIR", "xinntao/Real-ESRGAN", "TencentARC/GFPGAN"]
+    }
+  ]
+}
